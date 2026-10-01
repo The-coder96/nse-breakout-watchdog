@@ -1,0 +1,35 @@
+name: Intraday Breakout Watchdog
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install yfinance requests
+
+      - name: Run Watchdog
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python watchdog.py
+
+      - name: Commit Watchlist Updates
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add watchlist.json || true
+          git commit -m "Watchdog: Update watchlist after checks" || echo "No changes to commit"
+          git push
