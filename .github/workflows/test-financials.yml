@@ -1,0 +1,23 @@
+name: Test Financial Data Fetcher
+
+on:
+  workflow_dispatch: # Allows manual execution from the Actions tab
+
+jobs:
+  test-financials:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install yfinance pandas tradingview-screener
+          
+      - name: Run Financial Data Test
+        run: python test_financials.py
