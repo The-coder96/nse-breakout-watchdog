@@ -1,11 +1,12 @@
 """
-STRICT Multi-Year Breakout Scanner (10% GAP) + VISUAL DISCORD ENGINE (LIGHT MODE)
+STRICT Multi-Year Breakout Scanner (10% GAP) + VISUAL DISCORD ENGINE + FUNDAMENTALS
 ==================================================================================
 1. True Lifetime High: Absolute highest price ever traded (max of High).
 2. Virgin Ceiling Rule (Age): MUST be >= 2.0 years old.
 3. Integrity Rule: No daily close above this ceiling since established.
 4. Squeeze Rule (Proximity): Current price between 0.00% and 10.00% below ATH.
-5. Visual Engine: '5Y' Zoom + Extra Zoom + Native TV Camera Snapshot.
+5. Fundamental Rule: Must have POSITIVE Net Income & > ₹10Cr Revenue.
+6. Visual Engine: '5Y' Zoom + Extra Zoom + Native TV Camera Snapshot.
 """
 
 import os
@@ -27,7 +28,6 @@ IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 # SECURE DISCORD WEBHOOK CONFIGURATION
 # ==============================================================================
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
-
 
 # ==============================================================================
 # WATCHLIST PERSISTENCE FOR INTRADAY WATCHDOG
@@ -159,12 +159,19 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         return screenshot_path
 
 def send_breakout_to_discord(tv_symbol, image_path, q):
-    """Uploads the weekly chart screenshot and squeeze metrics to Discord."""
+    """Uploads the weekly chart screenshot and fundamentals metrics to Discord."""
     if not DISCORD_WEBHOOK_URL:
         print("[-] Error: DISCORD_WEBHOOK secret is missing.")
         return
 
     print(f"📤 Uploading {tv_symbol} alert to Discord...")
+    
+    # Convert raw metrics to Crores for clean display
+    rev_cr = q.get('total_revenue', 0) / 10000000
+    ni_cr = q.get('net_income', 0) / 10000000
+    ebitda_cr = q.get('ebitda', 0) / 10000000
+    eps = q.get('eps', 0)
+
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
         payload = {
@@ -174,6 +181,11 @@ def send_breakout_to_discord(tv_symbol, image_path, q):
                 f"• **Lifetime High:** ₹{q['lifetime_high']:.2f} (Established: {q['lh_date']})\n"
                 f"• **Ceiling Age:** {q['age_years']:.2f} Y\n"
                 f"• **Squeeze Gap:** {q['distance_pct']:.2f}%\n"
+                f"\n📊 **Key Fundamentals (Latest/TTM):**\n"
+                f"• **Total Revenue:** ₹{rev_cr:,.2f} Cr\n"
+                f"• **Net Income (PAT):** ₹{ni_cr:,.2f} Cr\n"
+                f"• **EBITDA:** ₹{ebitda_cr:,.2f} Cr\n"
+                f"• **EPS:** ₹{eps:.2f}\n\n"
                 f"*Attached: Weekly (1W) timeframe chart.*"
             )
         }
@@ -196,7 +208,7 @@ def send_empty_alert_to_discord():
         return
 
     payload = {
-        "content": "📊 **Daily Lifetime High Scanner Complete**\n0 stocks currently meet the strict ≥2Y age and ≤10% proximity criteria today."
+        "content": "📊 **Daily Lifetime High Scanner Complete**\n0 stocks currently meet the strict ≥2Y age, ≤10% proximity, and profitability criteria today."
     }
     try:
         requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
@@ -215,7 +227,7 @@ def process_alerts(qualified_stocks):
             print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
 
 # ==============================================================================
-# QUANTITATIVE SCANNER LOGIC (10% GAP)
+# QUANTITATIVE SCANNER LOGIC (10% GAP + FUNDAMENTALS)
 # ==============================================================================
 
 def fetch_tv_candidates(limit_size):
@@ -223,12 +235,17 @@ def fetch_tv_candidates(limit_size):
         count, df = (
             Query()
             .set_markets("india")
-            .select("name", "close", "volume", "market_cap_basic", "High.All")
+            .select(
+                "name", "close", "volume", "market_cap_basic", "High.All", 
+                "total_revenue", "net_income", "ebitda", "basic_eps_net_income"
+            )
             .where(
                 col("exchange").isin(["NSE"]),
                 col("type").isin(["stock"]),
                 col("close") > 50,
                 col("volume") > 50000,
+                col("net_income") > 0,              # PROFITABILITY GATEKEEPER
+                col("total_revenue") > 100000000    # MINIMUM 10 Cr REVENUE
             )
             .order_by("market_cap_basic", ascending=False)
             .limit(limit_size)
@@ -256,7 +273,11 @@ def fetch_tv_candidates(limit_size):
                 candidates.append({
                     "tv_symbol": tv_sym,
                     "name": name,
-                    "close": close
+                    "close": close,
+                    "total_revenue": float(row.get("total_revenue", 0) or 0),
+                    "net_income": float(row.get("net_income", 0) or 0),
+                    "ebitda": float(row.get("ebitda", 0) or 0),
+                    "eps": float(row.get("basic_eps_net_income", 0) or 0)
                 })
         return candidates
     except Exception as e:
@@ -291,7 +312,7 @@ def fetch_yf(yf_symbol):
             time.sleep(1)
     return None
 
-def analyze_strict(symbol, tv_sym, df):
+def analyze_strict(c, df):
     if df is None or len(df) < 500:
         return None
 
@@ -326,13 +347,17 @@ def analyze_strict(symbol, tv_sym, df):
         return None
 
     return {
-        "symbol": symbol,
-        "tv_symbol": tv_sym,
+        "symbol": c["name"],
+        "tv_symbol": c["tv_symbol"],
         "current_price": current_price,
         "lifetime_high": lifetime_high,
         "lh_date": lh_date.strftime("%d-%b-%Y"),
         "age_years": age_years,
-        "distance_pct": distance_pct
+        "distance_pct": distance_pct,
+        "total_revenue": c.get("total_revenue", 0),
+        "net_income": c.get("net_income", 0),
+        "ebitda": c.get("ebitda", 0),
+        "eps": c.get("eps", 0)
     }
 
 def print_results(qualified, universe_name):
@@ -346,7 +371,7 @@ def print_results(qualified, universe_name):
     print("="*85 + "\n")
 
 def run_scan():
-    print("Initializing Strict Multi-Year Proximity Scanner (Expanded to 10% Gap)...")
+    print("Initializing Strict Multi-Year Proximity Scanner (Expanded to 10% Gap + Fundamentals)...")
 
     print("\n[Pass 1] Scanning Top 500 NSE stocks by Market Cap...")
     candidates = fetch_tv_candidates(500)
@@ -356,7 +381,7 @@ def run_scan():
     for c in candidates:
         time.sleep(0.1)
         df = fetch_yf(tv_to_yf(c["tv_symbol"]))
-        res = analyze_strict(c["name"], c["tv_symbol"], df)
+        res = analyze_strict(c, df)
         if res:
             qualified.append(res)
 
@@ -378,7 +403,7 @@ def run_scan():
             print(f"...processed {i}/{len(candidates_all)} candidates...")
 
         df = fetch_yf(tv_to_yf(c["tv_symbol"]))
-        res = analyze_strict(c["name"], c["tv_symbol"], df)
+        res = analyze_strict(c, df)
         if res:
             qualified_all.append(res)
 
