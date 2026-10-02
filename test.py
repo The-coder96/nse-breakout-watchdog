@@ -33,7 +33,6 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
 # WATCHLIST PERSISTENCE FOR INTRADAY WATCHDOG
 # ==============================================================================
 def save_watchlist(qualified_stocks):
-    """Saves qualified breakout candidates to watchlist.json for watchdog.py."""
     watchlist = []
     for q in qualified_stocks:
         watchlist.append({
@@ -56,7 +55,6 @@ def save_watchlist(qualified_stocks):
 # ==============================================================================
 
 def capture_breakout_chart(tv_symbol, timeframe="1W"):
-    """Takes a snapshot using TV's Native Camera with multi-year zoom."""
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
@@ -86,15 +84,12 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         try:
             page.get_by_text("5Y", exact=True).click(timeout=3000)
             page.wait_for_timeout(1000)
-
             page.keyboard.type("1W", delay=100)
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
-
             for _ in range(2):
                 page.keyboard.press("Control+ArrowDown")
                 page.wait_for_timeout(200)
-
             for _ in range(3):
                 page.keyboard.press("ArrowLeft")
                 page.wait_for_timeout(100)
@@ -149,15 +144,17 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         return screenshot_path
 
 def send_breakout_to_discord(tv_symbol, image_path, q):
-    """Uploads the weekly chart screenshot and structured institutional metrics to Discord."""
     if not DISCORD_WEBHOOK_URL:
         print("[-] Error: DISCORD_WEBHOOK secret is missing.")
         return
 
     print(f"📤 Uploading {tv_symbol} alert to Discord...")
     
-    # Convert Operating Cash Flow to Crores for clean display
-    ocf_cr = q.get('ocf', 0) / 10000000
+    # Convert TradingView raw values to Indian Crores (Cr)
+    rev_cr = q.get('total_revenue', 0) / 10000000
+    ni_cr = q.get('net_income', 0) / 10000000
+    ebitda_cr = q.get('ebitda', 0) / 10000000
+    eps = q.get('eps', 0)
 
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
@@ -169,13 +166,11 @@ def send_breakout_to_discord(tv_symbol, image_path, q):
                 f"• Lifetime High: ₹{q['lifetime_high']:.2f} (Established: {q['lh_date']})\n"
                 f"• Ceiling Age: {q['age_years']:.2f} Y\n"
                 f"• Squeeze Gap: {q['distance_pct']:.2f}%\n\n"
-                f"**FUNDAMENTAL QUALITY**\n"
-                f"• Revenue Growth: {q['rev_growth']:.2f}%\n"
-                f"• PAT Growth: {q['pat_growth']:.2f}%\n"
-                f"• ROCE / ROE: {q['roce']:.2f}%\n"
-                f"• Debt/Equity: {q['de']:.2f}\n"
-                f"• Operating Cash Flow: ₹{ocf_cr:,.2f} Cr\n"
-                f"• Promoter Holding / Pledge: {q['promoter']:.2f}% / N/A\n\n"
+                f"**VERIFIED FUNDAMENTALS (Latest)**\n"
+                f"• Total Revenue: ₹{rev_cr:,.2f} Cr\n"
+                f"• Net Income (PAT): ₹{ni_cr:,.2f} Cr\n"
+                f"• EBITDA: ₹{ebitda_cr:,.2f} Cr\n"
+                f"• EPS: ₹{eps:.2f}\n\n"
                 f"**CHART**\n"
                 f"*Attached: Weekly (1W) timeframe chart.*"
             )
@@ -193,7 +188,6 @@ def send_breakout_to_discord(tv_symbol, image_path, q):
         os.remove(image_path)
 
 def send_empty_alert_to_discord():
-    """Sends a notification when 0 stocks pass the filter."""
     if not DISCORD_WEBHOOK_URL:
         print("[-] Error: DISCORD_WEBHOOK secret is missing.")
         return
@@ -208,7 +202,6 @@ def send_empty_alert_to_discord():
         print(f"\n[-] Exception during Discord webhook POST: {e}")
 
 def process_alerts(qualified_stocks):
-    """Loops through shortlisted stocks, captures charts, and posts to Discord."""
     print(f"\n[!] Initializing Visual Engine for {len(qualified_stocks)} stock(s)...")
     for q in sorted(qualified_stocks, key=lambda x: x["distance_pct"]):
         try:
@@ -218,7 +211,7 @@ def process_alerts(qualified_stocks):
             print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
 
 # ==============================================================================
-# QUANTITATIVE SCANNER LOGIC
+# QUANTITATIVE SCANNER LOGIC (Core Verified Metrics Only)
 # ==============================================================================
 
 def fetch_tv_candidates(limit_size):
@@ -226,14 +219,17 @@ def fetch_tv_candidates(limit_size):
         count, df = (
             Query()
             .set_markets("india")
-            .select("name", "close", "volume", "market_cap_basic", "High.All")
+            .select(
+                "name", "close", "volume", "market_cap_basic", "High.All",
+                "total_revenue", "net_income", "ebitda", "basic_eps_net_income"
+            )
             .where(
                 col("exchange").isin(["NSE"]),
                 col("type").isin(["stock"]),
                 col("close") > 50,
                 col("volume") > 50000,
-                col("net_income") > 0,              # PROFITABILITY GATEKEEPER
-                col("total_revenue") > 100000000    # MINIMUM 10 Cr REVENUE
+                col("net_income") > 0,              
+                col("total_revenue") > 100000000    
             )
             .order_by("market_cap_basic", ascending=False)
             .limit(limit_size)
@@ -261,7 +257,11 @@ def fetch_tv_candidates(limit_size):
                 candidates.append({
                     "tv_symbol": tv_sym,
                     "name": name,
-                    "close": close
+                    "close": close,
+                    "total_revenue": float(row.get("total_revenue", 0) or 0),
+                    "net_income": float(row.get("net_income", 0) or 0),
+                    "ebitda": float(row.get("ebitda", 0) or 0),
+                    "eps": float(row.get("basic_eps_net_income", 0) or 0)
                 })
         return candidates
     except Exception as e:
@@ -310,7 +310,6 @@ def analyze_strict(c, df):
         return None
 
     current_price = float(df["Close"].iloc[-1])
-
     lifetime_high = float(df["High"].max())
     lh_idx = df["High"].idxmax()
     lh_date = lh_idx.date()
@@ -330,27 +329,7 @@ def analyze_strict(c, df):
     if (post_ath["Close"] > lifetime_high).any():
         return None
 
-    # =========================================================================
-    # YFINANCE DEEP FUNDAMENTAL FETCH (Only runs if stock passes all technicals)
-    # =========================================================================
-    rev_growth = pat_growth = roce = de = ocf = promoter = 0
-    try:
-        tk = yf.Ticker(tv_to_yf(c["tv_symbol"]))
-        info = tk.info
-        if info:
-            # Multiply by 100 to convert decimals (0.12) to percentages (12.0%)
-            rev_growth = (info.get("revenueGrowth") or 0) * 100
-            pat_growth = (info.get("earningsGrowth") or 0) * 100
-            roce = (info.get("returnOnEquity") or 0) * 100
-            
-            # YF provides D/E as a percentage (e.g., 40.5% instead of 0.40). Convert to ratio.
-            de = (info.get("debtToEquity") or 0) / 100.0
-            
-            ocf = info.get("operatingCashflow") or 0
-            promoter = (info.get("heldPercentInsiders") or 0) * 100
-    except Exception as e:
-        print(f"[-] Could not fetch fundamentals for {c['tv_symbol']}: {e}")
-
+    # Pass the verified TradingView metrics directly through to the results
     return {
         "symbol": c["name"],
         "tv_symbol": c["tv_symbol"],
@@ -359,12 +338,10 @@ def analyze_strict(c, df):
         "lh_date": lh_date.strftime("%d-%b-%Y"),
         "age_years": age_years,
         "distance_pct": distance_pct,
-        "rev_growth": rev_growth,
-        "pat_growth": pat_growth,
-        "roce": roce,
-        "de": de,
-        "ocf": ocf,
-        "promoter": promoter
+        "total_revenue": c.get("total_revenue", 0),
+        "net_income": c.get("net_income", 0),
+        "ebitda": c.get("ebitda", 0),
+        "eps": c.get("eps", 0)
     }
 
 def print_results(qualified, universe_name):
@@ -378,8 +355,6 @@ def print_results(qualified, universe_name):
     print("="*85 + "\n")
 
 def run_scan():
-    print("Initializing Strict Multi-Year Proximity Scanner (Expanded to 10% Gap + Fundamentals)...")
-
     print("\n[Pass 1] Scanning Top 500 NSE stocks by Market Cap...")
     candidates = fetch_tv_candidates(500)
     print(f"Prefilter complete. Testing {len(candidates)} candidates deeply via yfinance...")
