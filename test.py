@@ -73,7 +73,6 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         page.goto(url, timeout=60000)
         page.wait_for_timeout(5000)
 
-        # 1. Clear common popups
         for selector in [
             'button[aria-label="Close dialog"]',
             'button:has-text("Accept all")',
@@ -84,7 +83,6 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             except Exception:
                 pass
 
-        # 2. Multi-Year Zoom Framing (5Y + Extra Zoom)
         try:
             page.get_by_text("5Y", exact=True).click(timeout=3000)
             page.wait_for_timeout(1000)
@@ -105,7 +103,6 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
                 page.keyboard.press("Control+ArrowDown")
                 page.wait_for_timeout(200)
 
-        # 3. Strip UI clutter
         try:
             page.evaluate('''
                 const leftBar = document.querySelector('[class*="layout__area--left"]');
@@ -123,7 +120,6 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         except Exception:
             pass
 
-        # 4. Native TradingView Snapshot Export
         try:
             print("   -> Triggering Native TradingView 'Take a snapshot' (Camera)...")
             camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"], button[aria-label="Take a snapshot"]').first
@@ -176,7 +172,7 @@ def send_breakout_to_discord(tv_symbol, image_path, q):
                 f"**FUNDAMENTAL QUALITY**\n"
                 f"• Revenue Growth: {q['rev_growth']:.2f}%\n"
                 f"• PAT Growth: {q['pat_growth']:.2f}%\n"
-                f"• ROCE: {q['roce']:.2f}%\n"
+                f"• ROCE / ROE: {q['roce']:.2f}%\n"
                 f"• Debt/Equity: {q['de']:.2f}\n"
                 f"• Operating Cash Flow: ₹{ocf_cr:,.2f} Cr\n"
                 f"• Promoter Holding / Pledge: {q['promoter']:.2f}% / N/A\n\n"
@@ -222,7 +218,7 @@ def process_alerts(qualified_stocks):
             print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
 
 # ==============================================================================
-# QUANTITATIVE SCANNER LOGIC (10% GAP + 6 FUNDAMENTAL FIELDS)
+# QUANTITATIVE SCANNER LOGIC
 # ==============================================================================
 
 def fetch_tv_candidates(limit_size):
@@ -230,23 +226,14 @@ def fetch_tv_candidates(limit_size):
         count, df = (
             Query()
             .set_markets("india")
-            .select(
-                "name", "close", "volume", "market_cap_basic", "High.All", 
-                "net_income", "total_revenue",
-                "total_revenue_yoy_growth", 
-                "net_income_yoy_growth", 
-                "return_on_capital_employed", 
-                "debt_to_equity", 
-                "cash_n_operating_activities", 
-                "promoters_hold_pct"
-            )
+            .select("name", "close", "volume", "market_cap_basic", "High.All")
             .where(
                 col("exchange").isin(["NSE"]),
                 col("type").isin(["stock"]),
                 col("close") > 50,
                 col("volume") > 50000,
-                col("net_income") > 0,              
-                col("total_revenue") > 100000000    
+                col("net_income") > 0,              # PROFITABILITY GATEKEEPER
+                col("total_revenue") > 100000000    # MINIMUM 10 Cr REVENUE
             )
             .order_by("market_cap_basic", ascending=False)
             .limit(limit_size)
@@ -274,13 +261,7 @@ def fetch_tv_candidates(limit_size):
                 candidates.append({
                     "tv_symbol": tv_sym,
                     "name": name,
-                    "close": close,
-                    "rev_growth": float(row.get("total_revenue_yoy_growth", 0) or 0),
-                    "pat_growth": float(row.get("net_income_yoy_growth", 0) or 0),
-                    "roce": float(row.get("return_on_capital_employed", 0) or 0),
-                    "de": float(row.get("debt_to_equity", 0) or 0),
-                    "ocf": float(row.get("cash_n_operating_activities", 0) or 0),
-                    "promoter": float(row.get("promoters_hold_pct", 0) or 0)
+                    "close": close
                 })
         return candidates
     except Exception as e:
@@ -349,6 +330,27 @@ def analyze_strict(c, df):
     if (post_ath["Close"] > lifetime_high).any():
         return None
 
+    # =========================================================================
+    # YFINANCE DEEP FUNDAMENTAL FETCH (Only runs if stock passes all technicals)
+    # =========================================================================
+    rev_growth = pat_growth = roce = de = ocf = promoter = 0
+    try:
+        tk = yf.Ticker(tv_to_yf(c["tv_symbol"]))
+        info = tk.info
+        if info:
+            # Multiply by 100 to convert decimals (0.12) to percentages (12.0%)
+            rev_growth = (info.get("revenueGrowth") or 0) * 100
+            pat_growth = (info.get("earningsGrowth") or 0) * 100
+            roce = (info.get("returnOnEquity") or 0) * 100
+            
+            # YF provides D/E as a percentage (e.g., 40.5% instead of 0.40). Convert to ratio.
+            de = (info.get("debtToEquity") or 0) / 100.0
+            
+            ocf = info.get("operatingCashflow") or 0
+            promoter = (info.get("heldPercentInsiders") or 0) * 100
+    except Exception as e:
+        print(f"[-] Could not fetch fundamentals for {c['tv_symbol']}: {e}")
+
     return {
         "symbol": c["name"],
         "tv_symbol": c["tv_symbol"],
@@ -357,12 +359,12 @@ def analyze_strict(c, df):
         "lh_date": lh_date.strftime("%d-%b-%Y"),
         "age_years": age_years,
         "distance_pct": distance_pct,
-        "rev_growth": c.get("rev_growth", 0),
-        "pat_growth": c.get("pat_growth", 0),
-        "roce": c.get("roce", 0),
-        "de": c.get("de", 0),
-        "ocf": c.get("ocf", 0),
-        "promoter": c.get("promoter", 0)
+        "rev_growth": rev_growth,
+        "pat_growth": pat_growth,
+        "roce": roce,
+        "de": de,
+        "ocf": ocf,
+        "promoter": promoter
     }
 
 def print_results(qualified, universe_name):
