@@ -1,5 +1,5 @@
 """
-STRICT Multi-Year Breakout Scanner (10% GAP) + VISUAL DISCORD ENGINE + FUNDAMENTALS
+STRICT Multi-Year Breakout Scanner (10% GAP) + INSTITUTIONAL DISCORD ALERTS
 ==================================================================================
 1. True Lifetime High: Absolute highest price ever traded (max of High).
 2. Virgin Ceiling Rule (Age): MUST be >= 2.0 years old.
@@ -93,12 +93,10 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
 
-            # Zoom out extra to catch early history
             for _ in range(2):
                 page.keyboard.press("Control+ArrowDown")
                 page.wait_for_timeout(200)
 
-            # Pan left slightly
             for _ in range(3):
                 page.keyboard.press("ArrowLeft")
                 page.wait_for_timeout(100)
@@ -112,16 +110,12 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             page.evaluate('''
                 const leftBar = document.querySelector('[class*="layout__area--left"]');
                 if (leftBar) leftBar.style.display = 'none';
-
                 const topBar = document.querySelector('[class*="layout__area--top"]');
                 if (topBar) topBar.style.display = 'none';
-
                 const rightBar = document.querySelector('[class*="layout__area--right"]');
                 if (rightBar) rightBar.style.display = 'none';
-
                 const bottomArea = document.querySelector('[class*="layout__area--bottom"]');
                 if (bottomArea) bottomArea.style.display = 'none';
-
                 const bottomWidget = document.querySelector('[data-name="bottom-widget-bar"]');
                 if (bottomWidget) bottomWidget.style.display = 'none';
             ''')
@@ -159,33 +153,34 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         return screenshot_path
 
 def send_breakout_to_discord(tv_symbol, image_path, q):
-    """Uploads the weekly chart screenshot and fundamentals metrics to Discord."""
+    """Uploads the weekly chart screenshot and structured institutional metrics to Discord."""
     if not DISCORD_WEBHOOK_URL:
         print("[-] Error: DISCORD_WEBHOOK secret is missing.")
         return
 
     print(f"📤 Uploading {tv_symbol} alert to Discord...")
     
-    # Convert raw metrics to Crores for clean display
-    rev_cr = q.get('total_revenue', 0) / 10000000
-    ni_cr = q.get('net_income', 0) / 10000000
-    ebitda_cr = q.get('ebitda', 0) / 10000000
-    eps = q.get('eps', 0)
+    # Convert Operating Cash Flow to Crores for clean display
+    ocf_cr = q.get('ocf', 0) / 10000000
 
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
         payload = {
             "content": (
-                f"🚨 **MULTI-YEAR SQUEEZE DETECTED: {q['symbol']}**\n"
-                f"• **Current Price:** ₹{q['current_price']:.2f}\n"
-                f"• **Lifetime High:** ₹{q['lifetime_high']:.2f} (Established: {q['lh_date']})\n"
-                f"• **Ceiling Age:** {q['age_years']:.2f} Y\n"
-                f"• **Squeeze Gap:** {q['distance_pct']:.2f}%\n"
-                f"\n📊 **Key Fundamentals (Latest/TTM):**\n"
-                f"• **Total Revenue:** ₹{rev_cr:,.2f} Cr\n"
-                f"• **Net Income (PAT):** ₹{ni_cr:,.2f} Cr\n"
-                f"• **EBITDA:** ₹{ebitda_cr:,.2f} Cr\n"
-                f"• **EPS:** ₹{eps:.2f}\n\n"
+                f"🚨 **MULTI-YEAR SQUEEZE DETECTED: {q['symbol']}**\n\n"
+                f"**TECHNICAL**\n"
+                f"• Current Price: ₹{q['current_price']:.2f}\n"
+                f"• Lifetime High: ₹{q['lifetime_high']:.2f} (Established: {q['lh_date']})\n"
+                f"• Ceiling Age: {q['age_years']:.2f} Y\n"
+                f"• Squeeze Gap: {q['distance_pct']:.2f}%\n\n"
+                f"**FUNDAMENTAL QUALITY**\n"
+                f"• Revenue Growth: {q['rev_growth']:.2f}%\n"
+                f"• PAT Growth: {q['pat_growth']:.2f}%\n"
+                f"• ROCE: {q['roce']:.2f}%\n"
+                f"• Debt/Equity: {q['de']:.2f}\n"
+                f"• Operating Cash Flow: ₹{ocf_cr:,.2f} Cr\n"
+                f"• Promoter Holding / Pledge: {q['promoter']:.2f}% / N/A\n\n"
+                f"**CHART**\n"
                 f"*Attached: Weekly (1W) timeframe chart.*"
             )
         }
@@ -227,7 +222,7 @@ def process_alerts(qualified_stocks):
             print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
 
 # ==============================================================================
-# QUANTITATIVE SCANNER LOGIC (10% GAP + FUNDAMENTALS)
+# QUANTITATIVE SCANNER LOGIC (10% GAP + 6 FUNDAMENTAL FIELDS)
 # ==============================================================================
 
 def fetch_tv_candidates(limit_size):
@@ -237,15 +232,21 @@ def fetch_tv_candidates(limit_size):
             .set_markets("india")
             .select(
                 "name", "close", "volume", "market_cap_basic", "High.All", 
-                "total_revenue", "net_income", "ebitda", "basic_eps_net_income"
+                "net_income", "total_revenue",
+                "total_revenue_yoy_growth", 
+                "net_income_yoy_growth", 
+                "return_on_capital_employed", 
+                "debt_to_equity", 
+                "cash_n_operating_activities", 
+                "promoters_hold_pct"
             )
             .where(
                 col("exchange").isin(["NSE"]),
                 col("type").isin(["stock"]),
                 col("close") > 50,
                 col("volume") > 50000,
-                col("net_income") > 0,              # PROFITABILITY GATEKEEPER
-                col("total_revenue") > 100000000    # MINIMUM 10 Cr REVENUE
+                col("net_income") > 0,              
+                col("total_revenue") > 100000000    
             )
             .order_by("market_cap_basic", ascending=False)
             .limit(limit_size)
@@ -274,10 +275,12 @@ def fetch_tv_candidates(limit_size):
                     "tv_symbol": tv_sym,
                     "name": name,
                     "close": close,
-                    "total_revenue": float(row.get("total_revenue", 0) or 0),
-                    "net_income": float(row.get("net_income", 0) or 0),
-                    "ebitda": float(row.get("ebitda", 0) or 0),
-                    "eps": float(row.get("basic_eps_net_income", 0) or 0)
+                    "rev_growth": float(row.get("total_revenue_yoy_growth", 0) or 0),
+                    "pat_growth": float(row.get("net_income_yoy_growth", 0) or 0),
+                    "roce": float(row.get("return_on_capital_employed", 0) or 0),
+                    "de": float(row.get("debt_to_equity", 0) or 0),
+                    "ocf": float(row.get("cash_n_operating_activities", 0) or 0),
+                    "promoter": float(row.get("promoters_hold_pct", 0) or 0)
                 })
         return candidates
     except Exception as e:
@@ -354,10 +357,12 @@ def analyze_strict(c, df):
         "lh_date": lh_date.strftime("%d-%b-%Y"),
         "age_years": age_years,
         "distance_pct": distance_pct,
-        "total_revenue": c.get("total_revenue", 0),
-        "net_income": c.get("net_income", 0),
-        "ebitda": c.get("ebitda", 0),
-        "eps": c.get("eps", 0)
+        "rev_growth": c.get("rev_growth", 0),
+        "pat_growth": c.get("pat_growth", 0),
+        "roce": c.get("roce", 0),
+        "de": c.get("de", 0),
+        "ocf": c.get("ocf", 0),
+        "promoter": c.get("promoter", 0)
     }
 
 def print_results(qualified, universe_name):
