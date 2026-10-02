@@ -4,8 +4,8 @@
         "tv_symbol": "NSE:LALPATHLAB",
         "yf_symbol": "LALPATHLAB.NS",
         "target": 2045.0,
-        "current_price": 1987.0,
-        "distance_pct": 2.84,
+        "current_price": 2005.1,
+        "distance_pct": 1.95,
         "lh_date": "15-Sep-2021"
     },
     {
@@ -13,8 +13,8 @@
         "tv_symbol": "NSE:NAZARA",
         "yf_symbol": "NAZARA.NS",
         "target": 419.5,
-        "current_price": 392.85,
-        "distance_pct": 6.35,
+        "current_price": 384.7,
+        "distance_pct": 8.3,
         "lh_date": "11-Oct-2021"
     }
 ]
