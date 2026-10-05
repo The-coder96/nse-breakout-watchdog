@@ -21,7 +21,11 @@ from playwright.sync_api import sync_playwright
 
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
+
+# ==============================================================================
+# TEMPORARY HARDCODED DISCORD WEBHOOK 
+# ==============================================================================
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1517096082926993428/D-LzLr9yUprhCVU5IKZ1WNQLLELEiqkUip-PU-pr5F-XEymYh7Y6Pw0olTcRjur9jh_p"
 
 # ==============================================================================
 # INDEX UNIVERSE MAPPING (TradingView Format -> Yahoo Finance Format)
@@ -144,7 +148,7 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
 
 def send_breakout_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL:
-        print("[-] Error: DISCORD_WEBHOOK secret is missing.")
+        print("[-] Error: DISCORD_WEBHOOK URL is missing.")
         return
 
     print(f"📤 Uploading {tv_symbol} alert to Discord...")
