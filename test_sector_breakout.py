@@ -1,8 +1,8 @@
 """
 UNIFIED SECTOR SCANNER (5:15 PM DAILY)
 ==================================================================================
-1. Mon-Thu Rule: Alerts ONLY on 5 to 10 Year Virgin Ceilings within a 5% Gap.
-2. Friday Rule: Alerts on 5 to 10 Year Squeezes AND Absolute ATH Momentum.
+1. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
+2. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum.
 3. Live Price: Reads the active market price without dropping the current day.
 """
 
@@ -48,7 +48,7 @@ SECTOR_INDICES = [
     {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUM"},
     {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCMDT"},
     {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "NIFTY_MIDCAP_100.NS"},
-    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "NIFTY_SMLCAP_100.NS"},
+    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSC"}, # Using alternate Yahoo Finance ticker
     {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"}
 ]
 
@@ -117,7 +117,7 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
     
     if q["type"] == "SQUEEZE":
-        title = f"🚨 **5-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
+        title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
         body = (
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Multi-Year Ceiling: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
@@ -182,9 +182,9 @@ def analyze_sector(index_data, df, is_friday):
     if not (0.00 <= distance_pct <= 5.00):
         return None
 
-    # Condition 1: STRICT 5-to-10 Year Squeeze (Applies Mon-Fri)
+    # Condition 1: STRICT 1-to-10 Year Squeeze (Applies Mon-Fri)
     is_multi_year_squeeze = False
-    if 5.0 <= age_years <= 10.0:  # <--- UPDATED: Cap maximum ceiling age at 10 years
+    if 1.0 <= age_years <= 10.0:  # <--- UPDATED: Minimum 1 year, Maximum 10 years
         post_ath = df.loc[lh_idx:]
         if not (post_ath["Close"] > lifetime_high).any():
             is_multi_year_squeeze = True
@@ -219,9 +219,9 @@ def run_scan():
 
     print(f"Initializing Unified Sector Scanner at {ist_now.strftime('%I:%M %p IST')}...")
     if is_friday:
-        print("==> TODAY IS FRIDAY: Scanning for 5-10 Year Squeezes AND Absolute Momentum (ATH).")
+        print("==> TODAY IS FRIDAY: Scanning for 1-10 Year Squeezes AND Absolute Momentum (ATH).")
     else:
-        print("==> TODAY IS MON-THU: Scanning ONLY for 5-10 Year Squeezes.")
+        print("==> TODAY IS MON-THU: Scanning ONLY for 1-10 Year Squeezes.")
 
     qualified = []
     for idx in SECTOR_INDICES:
