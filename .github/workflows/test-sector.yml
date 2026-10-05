@@ -23,4 +23,4 @@ jobs:
       - name: Run Sector Scanner
         env:
           DISCORD_SECTOR_WEBHOOK: ${{ secrets.DISCORD_SECTOR_WEBHOOK }}
-        run: python sector_scan.py
+        run: python test_sector_breakout.py
