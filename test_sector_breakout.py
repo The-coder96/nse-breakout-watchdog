@@ -4,6 +4,7 @@ UNIFIED SECTOR SCANNER (5:15 PM DAILY)
 1. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
 2. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum.
 3. Live Price: Reads the active market price without dropping the current day.
+4. Full Audit Log: Shows live progress, rejection reasons, and final summary.
 """
 
 import os
@@ -48,7 +49,7 @@ SECTOR_INDICES = [
     {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUM"},
     {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCMDT"},
     {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "NIFTY_MIDCAP_100.NS"},
-    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSC"}, # Using alternate Yahoo Finance ticker
+    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSC"},
     {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"}
 ]
 
@@ -164,7 +165,8 @@ def fetch_yf(yf_symbol):
     return None
 
 def analyze_sector(index_data, df, is_friday):
-    if df is None or len(df) < 500: return None
+    if df is None or len(df) < 500:
+        return None, "Insufficient data (< 500 bars)"
 
     ist_now = datetime.now(tz=IST)
     today = ist_now.date()
@@ -180,11 +182,11 @@ def analyze_sector(index_data, df, is_friday):
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
     if not (0.00 <= distance_pct <= 5.00):
-        return None
+        return None, f"Gap ({distance_pct:.2f}%) exceeds 5.00% range"
 
     # Condition 1: STRICT 1-to-10 Year Squeeze (Applies Mon-Fri)
     is_multi_year_squeeze = False
-    if 1.0 <= age_years <= 10.0:  # <--- UPDATED: Minimum 1 year, Maximum 10 years
+    if 1.0 <= age_years <= 10.0:
         post_ath = df.loc[lh_idx:]
         if not (post_ath["Close"] > lifetime_high).any():
             is_multi_year_squeeze = True
@@ -200,7 +202,12 @@ def analyze_sector(index_data, df, is_friday):
     elif is_momentum and is_friday:
         alert_type = "MOMENTUM"
     else:
-        return None
+        if age_years < 1.0:
+            return None, f"Ceiling too recent ({age_years:.2f}Y) — Mon-Thu requires 1-10Y"
+        elif age_years > 10.0:
+            return None, f"Ceiling too old ({age_years:.2f}Y) — exceeds 10-year limit"
+        else:
+            return None, "Integrity broken (close found above ceiling)"
 
     return {
         "name": index_data["name"],
@@ -211,35 +218,62 @@ def analyze_sector(index_data, df, is_friday):
         "age_years": age_years,
         "distance_pct": distance_pct,
         "type": alert_type
-    }
+    }, "Qualified"
 
 def run_scan():
     ist_now = datetime.now(tz=IST)
-    is_friday = (ist_now.weekday() == 4)  # 4 = Friday in Python
+    is_friday = (ist_now.weekday() == 4)
+    total_indices = len(SECTOR_INDICES)
 
-    print(f"Initializing Unified Sector Scanner at {ist_now.strftime('%I:%M %p IST')}...")
-    if is_friday:
-        print("==> TODAY IS FRIDAY: Scanning for 1-10 Year Squeezes AND Absolute Momentum (ATH).")
-    else:
-        print("==> TODAY IS MON-THU: Scanning ONLY for 1-10 Year Squeezes.")
+    print("=" * 80)
+    print(f"SECTOR SCANNER EXECUTION: {ist_now.strftime('%d-%b-%Y %I:%M %p IST')}")
+    print(f"Mode: {'FRIDAY FULL SCAN (1-10Y Squeeze + Momentum ATH)' if is_friday else 'MON-THU STRICT SCAN (1-10Y Squeeze Only)'}")
+    print("=" * 80)
 
     qualified = []
-    for idx in SECTOR_INDICES:
+    thrown_out_count = 0
+    failed_fetch_count = 0
+
+    for i, idx in enumerate(SECTOR_INDICES, 1):
         df = fetch_yf(idx["yf"])
-        res = analyze_sector(idx, df, is_friday)
+        if df is None:
+            failed_fetch_count += 1
+            print(f"[{i:02d}/{total_indices:02d}] ⚠️ SKIPPED    : {idx['name']:<18} | Yahoo Finance missing/invalid data")
+            continue
+
+        res, reason = analyze_sector(idx, df, is_friday)
         if res:
             qualified.append(res)
+            print(f"[{i:02d}/{total_indices:02d}] ✅ SHORTLISTED: {idx['name']:<18} | {res['type']} (Gap: {res['distance_pct']:.2f}%, Age: {res['age_years']:.2f}Y)")
+        else:
+            thrown_out_count += 1
+            print(f"[{i:02d}/{total_indices:02d}] ❌ THROWN OUT : {idx['name']:<18} | {reason}")
+
+    # ==========================================================================
+    # AUDIT LOG SUMMARY
+    # ==========================================================================
+    successfully_scanned = total_indices - failed_fetch_count
+
+    print("\n" + "=" * 80)
+    print("FINAL SCAN AUDIT REPORT")
+    print("=" * 80)
+    print(f"• Total Indices Processed : {total_indices}/{total_indices}")
+    print(f"• Successfully Downloaded : {successfully_scanned}/{total_indices}")
+    print(f"• Data Download Failures  : {failed_fetch_count}")
+    print(f"• Thrown Out (Filtered)   : {thrown_out_count}")
+    print(f"• Shortlisted for Discord : {len(qualified)}")
+    print("=" * 80 + "\n")
 
     if qualified:
-        print(f"\n[!] Initializing Visual Engine for {len(qualified)} index(es)...")
+        print(f"[!] Initializing Visual Engine for {len(qualified)} index(es)...")
         for q in sorted(qualified, key=lambda x: x["distance_pct"]):
             try:
                 screenshot_path = capture_breakout_chart(q['tv_symbol'], timeframe="1W")
                 send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
             except Exception as e:
-                print(f"[-] Failed: {e}")
+                print(f"[-] Failed to deliver chart for {q['name']}: {e}")
     else:
-        print("\n0 sector indices meet today's criteria.")
+        print("0 sector indices met alert criteria today.")
 
 if __name__ == "__main__":
     run_scan()
