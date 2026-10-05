@@ -1,10 +1,10 @@
 name: Test Sector Breakout Scanner
 
 on:
-  workflow_dispatch: # Allows manual execution from the Actions tab
+  workflow_dispatch: # Allows manual execution ONLY. No automatic timer.
 
 jobs:
-  test-sector:
+  sector-scan:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -23,4 +23,4 @@ jobs:
       - name: Run Sector Scanner
         env:
           DISCORD_SECTOR_WEBHOOK: ${{ secrets.DISCORD_SECTOR_WEBHOOK }}
-        run: python test_sector_breakout.py
+        run: python sector_scan.py
