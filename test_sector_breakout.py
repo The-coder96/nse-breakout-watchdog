@@ -1,12 +1,11 @@
 """
-ISOLATED TEST: Multi-Year Breakout Scanner for Indices/Sectors
+ISOLATED TEST: Sector Momentum Scanner (Near Absolute All-Time Highs)
 ==================================================================================
 1. Hardcoded Index Universe: Scans predefined NSE/BSE sector indices.
-2. True Lifetime High: Absolute highest price ever traded (max of High).
-3. Virgin Ceiling Rule (Age): MUST be >= 2.0 years old.
-4. Integrity Rule: No daily close above this ceiling since established.
-5. Squeeze Rule (Proximity): Current price between 0.00% and 10.00% below ATH.
-6. Visual Engine: '5Y' Zoom + Extra Zoom + Native TV Camera Snapshot.
+2. Absolute Lifetime High: Finds the highest price ever traded in the index's history.
+3. Momentum Rule: Current price must be within 10.00% of this absolute high.
+4. (REMOVED: 2-Year Age and Integrity rules - sectors trend differently than stocks).
+5. Visual Engine: '5Y' Zoom + Extra Zoom + Native TV Camera Snapshot.
 """
 
 import os
@@ -28,7 +27,7 @@ IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_SECTOR_WEBHOOK")
 
 # ==============================================================================
-# INDEX UNIVERSE MAPPING (TradingView Format -> Yahoo Finance Format)
+# CORRECTED INDEX UNIVERSE MAPPING FOR YAHOO FINANCE
 # ==============================================================================
 SECTOR_INDICES = [
     {"name": "NIFTY 50", "tv": "NSE:NIFTY", "yf": "^NSEI"},
@@ -38,24 +37,25 @@ SECTOR_INDICES = [
     {"name": "CNXAUTO", "tv": "NSE:CNXAUTO", "yf": "^CNXAUTO"},
     {"name": "CNXFMCG", "tv": "NSE:CNXFMCG", "yf": "^CNXFMCG"},
     {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA", "yf": "^CNXPHARMA"},
+    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE", "yf": "NIFTY_HEALTHCARE.NS"},
     {"name": "CNXMETAL", "tv": "NSE:CNXMETAL", "yf": "^CNXMETAL"},
     {"name": "CNXREALTY", "tv": "NSE:CNXREALTY", "yf": "^CNXREALTY"},
     {"name": "CNXENERGY", "tv": "NSE:CNXENERGY", "yf": "^CNXENERGY"},
     {"name": "CNXINFRA", "tv": "NSE:CNXINFRA", "yf": "^CNXINFRA"},
     {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA", "yf": "^CNXMEDIA"},
-    {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE", "yf": "^CNXFINANCE"},
+    {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE", "yf": "^CNXFIN"},
     {"name": "CNXPSE", "tv": "NSE:CNXPSE", "yf": "^CNXPSE"},
     {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK", "yf": "^CNXPSUBANK"},
-    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK", "yf": "^NIFTYPVTBANK"},
-    {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUMPTION"},
-    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCOMMODITIES"},
-    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "^CNXMIDCAP"},
-    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSMALLCAP"},
+    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK", "yf": "NIFTY_PVT_BANK.NS"},
+    {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUM"},
+    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCMDT"},
+    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "^CRSLMD"},
+    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CRSLSM"},
     {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"}
 ]
 
 # ==============================================================================
-# VISUAL CAPTURE & DISCORD ENGINE (Purely Technical)
+# VISUAL CAPTURE & DISCORD ENGINE
 # ==============================================================================
 
 def capture_breakout_chart(tv_symbol, timeframe="1W"):
@@ -157,12 +157,11 @@ def send_breakout_to_discord(tv_symbol, image_path, q):
         files = {"file": (image_path, f, "image/png")}
         payload = {
             "content": (
-                f"🚨 **SECTOR SQUEEZE DETECTED: {q['name']}**\n\n"
+                f"🚨 **SECTOR MOMENTUM DETECTED: {q['name']}**\n\n"
                 f"**TECHNICAL**\n"
                 f"• Current Level: {q['current_price']:.2f}\n"
-                f"• Lifetime High: {q['lifetime_high']:.2f} (Established: {q['lh_date']})\n"
-                f"• Ceiling Age: {q['age_years']:.2f} Y\n"
-                f"• Squeeze Gap: {q['distance_pct']:.2f}%\n\n"
+                f"• Absolute Max High: {q['lifetime_high']:.2f} (Hit on: {q['lh_date']})\n"
+                f"• Proximity to Max High: {q['distance_pct']:.2f}%\n\n"
                 f"**CHART**\n"
                 f"*Attached: Weekly (1W) timeframe chart.*"
             )
@@ -180,7 +179,7 @@ def send_breakout_to_discord(tv_symbol, image_path, q):
         os.remove(image_path)
 
 # ==============================================================================
-# TECHNICAL SCANNER LOGIC
+# TECHNICAL SCANNER LOGIC (Pure Momentum)
 # ==============================================================================
 
 def fetch_yf(yf_symbol):
@@ -224,21 +223,15 @@ def analyze_strict(index_data, df):
     lh_idx = df["High"].idxmax()
     lh_date = lh_idx.date()
 
-    age_days = (today - lh_date).days
-    age_years = age_days / 365.25
-
-    if age_years < 2.0:
-        return None
-
-    # 10% Squeeze gap
+    # Calculate gap to the absolute maximum high
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
+    # If it is not within 10% of its absolute max ever, skip it.
     if not (0.00 <= distance_pct <= 10.00):
         return None
 
-    post_ath = df.loc[lh_idx:]
-    if (post_ath["Close"] > lifetime_high).any():
-        return None
+    # Notice: We completely removed the `age_years < 2.0` and `post_ath` checks.
+    # We only care that it is currently sitting right near its all-time high.
 
     return {
         "name": index_data["name"],
@@ -246,33 +239,37 @@ def analyze_strict(index_data, df):
         "current_price": current_price,
         "lifetime_high": lifetime_high,
         "lh_date": lh_date.strftime("%d-%b-%Y"),
-        "age_years": age_years,
         "distance_pct": distance_pct
     }
 
 def print_results(qualified):
     print("\n" + "="*85)
-    print(f"SECTOR BREAKOUT SETUP(S) FOUND (GAP <= 10%)")
+    print(f"SECTORS TRADING NEAR ABSOLUTE ALL-TIME HIGHS (GAP <= 10%)")
     print("="*85)
-    print(f"{'INDEX':<20} {'LEVEL':<10} {'ATH':<12} {'ATH DATE':<15} {'AGE':<10} {'GAP %':<10}")
+    print(f"{'INDEX':<25} {'LEVEL':<10} {'MAX HIGH':<12} {'DATE HIT':<15} {'GAP %':<10}")
     print("-" * 85)
     for q in sorted(qualified, key=lambda x: x["distance_pct"]):
-        print(f"{q['name']:<20} {q['current_price']:<10.2f} {q['lifetime_high']:<12.2f} {q['lh_date']:<15} {q['age_years']:<5.2f}Y    {q['distance_pct']:.2f}%")
+        print(f"{q['name']:<25} {q['current_price']:<10.2f} {q['lifetime_high']:<12.2f} {q['lh_date']:<15} {q['distance_pct']:.2f}%")
     print("="*85 + "\n")
 
 def run_scan():
-    print("Initializing Sector Index Breakout Tester...")
+    print("Initializing Sector Momentum Tracker (Absolute ATH Proximity)...")
     print(f"Scanning {len(SECTOR_INDICES)} Major Indices...")
 
     qualified = []
     for idx in SECTOR_INDICES:
         time.sleep(0.1)
         df = fetch_yf(idx["yf"])
+        
+        if df is None:
+            print(f"[-] Data fetch failed for {idx['name']} ({idx['yf']})")
+            continue
+
         res = analyze_strict(idx, df)
         if res:
             qualified.append(res)
         else:
-            print(f"   -> {idx['name']} did not meet 2Y Age + 10% Proximity rules.")
+            print(f"   -> {idx['name']} is currently more than 10% away from its absolute highest level.")
 
     if qualified:
         print_results(qualified)
@@ -284,7 +281,7 @@ def run_scan():
             except Exception as e:
                 print(f"[-] Failed to generate chart for {q['name']}: {e}")
     else:
-        print("\n0 sector indices are currently squeezing within 10% of a 2+ Year High.")
+        print("\n0 sector indices are currently within 10% of their absolute maximum high.")
 
 if __name__ == "__main__":
     run_scan()
