@@ -1,8 +1,8 @@
 """
 UNIFIED SECTOR SCANNER (5:15 PM DAILY)
 ==================================================================================
-1. Mon-Thu Rule: Alerts ONLY on 5+ Year Virgin Ceilings within a 5% Gap.
-2. Friday Rule: Alerts on 5+ Year Squeezes AND Absolute ATH Momentum.
+1. Mon-Thu Rule: Alerts ONLY on 5 to 10 Year Virgin Ceilings within a 5% Gap.
+2. Friday Rule: Alerts on 5 to 10 Year Squeezes AND Absolute ATH Momentum.
 3. Live Price: Reads the active market price without dropping the current day.
 """
 
@@ -25,7 +25,7 @@ IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_SECTOR_WEBHOOK")
 
 # ==============================================================================
-# INDEX UNIVERSE MAPPING
+# CORRECTED INDEX UNIVERSE MAPPING FOR YAHOO FINANCE
 # ==============================================================================
 SECTOR_INDICES = [
     {"name": "NIFTY 50", "tv": "NSE:NIFTY", "yf": "^NSEI"},
@@ -35,20 +35,20 @@ SECTOR_INDICES = [
     {"name": "CNXAUTO", "tv": "NSE:CNXAUTO", "yf": "^CNXAUTO"},
     {"name": "CNXFMCG", "tv": "NSE:CNXFMCG", "yf": "^CNXFMCG"},
     {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA", "yf": "^CNXPHARMA"},
-    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE", "yf": "NIFTY_HEALTHCARE.NS"},
+    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE", "yf": "NIFTY_HEALTHCARE.NS"}, 
     {"name": "CNXMETAL", "tv": "NSE:CNXMETAL", "yf": "^CNXMETAL"},
     {"name": "CNXREALTY", "tv": "NSE:CNXREALTY", "yf": "^CNXREALTY"},
     {"name": "CNXENERGY", "tv": "NSE:CNXENERGY", "yf": "^CNXENERGY"},
     {"name": "CNXINFRA", "tv": "NSE:CNXINFRA", "yf": "^CNXINFRA"},
     {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA", "yf": "^CNXMEDIA"},
-    {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE", "yf": "^CNXFIN"},
+    {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE", "yf": "NIFTY_FIN_SERVICE.NS"},
     {"name": "CNXPSE", "tv": "NSE:CNXPSE", "yf": "^CNXPSE"},
     {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK", "yf": "^CNXPSUBANK"},
     {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK", "yf": "NIFTY_PVT_BANK.NS"},
     {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUM"},
     {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCMDT"},
-    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "^CRSLMD"},
-    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CRSLSM"},
+    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "NIFTY_MIDCAP_100.NS"},
+    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "NIFTY_SMLCAP_100.NS"},
     {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"}
 ]
 
@@ -116,9 +116,8 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
     
-    # Format message based on whether it is a Multi-Year Squeeze or an Absolute Momentum play
     if q["type"] == "SQUEEZE":
-        title = f"🚨 **5+ YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
+        title = f"🚨 **5-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
         body = (
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Multi-Year Ceiling: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
@@ -180,13 +179,12 @@ def analyze_sector(index_data, df, is_friday):
 
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # Base Filter: Must be within 5% of the absolute high
     if not (0.00 <= distance_pct <= 5.00):
         return None
 
-    # Condition 1: 5-to-10 Year Squeeze (Applies Mon-Fri)
+    # Condition 1: STRICT 5-to-10 Year Squeeze (Applies Mon-Fri)
     is_multi_year_squeeze = False
-    if age_years >= 5.0:
+    if 5.0 <= age_years <= 10.0:  # <--- UPDATED: Cap maximum ceiling age at 10 years
         post_ath = df.loc[lh_idx:]
         if not (post_ath["Close"] > lifetime_high).any():
             is_multi_year_squeeze = True
@@ -202,7 +200,6 @@ def analyze_sector(index_data, df, is_friday):
     elif is_momentum and is_friday:
         alert_type = "MOMENTUM"
     else:
-        # If it's Mon-Thu and it's a recent ATH (momentum), ignore it.
         return None
 
     return {
@@ -222,9 +219,9 @@ def run_scan():
 
     print(f"Initializing Unified Sector Scanner at {ist_now.strftime('%I:%M %p IST')}...")
     if is_friday:
-        print("==> TODAY IS FRIDAY: Scanning for 5+ Year Squeezes AND Absolute Momentum (ATH).")
+        print("==> TODAY IS FRIDAY: Scanning for 5-10 Year Squeezes AND Absolute Momentum (ATH).")
     else:
-        print("==> TODAY IS MON-THU: Scanning ONLY for 5+ Year Squeezes.")
+        print("==> TODAY IS MON-THU: Scanning ONLY for 5-10 Year Squeezes.")
 
     qualified = []
     for idx in SECTOR_INDICES:
