@@ -21,7 +21,11 @@ from playwright.sync_api import sync_playwright
 
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
+
+# ==============================================================================
+# SECURE DISCORD WEBHOOK CONFIGURATION
+# ==============================================================================
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_SECTOR_WEBHOOK")
 
 # ==============================================================================
 # INDEX UNIVERSE MAPPING (TradingView Format -> Yahoo Finance Format)
@@ -144,7 +148,7 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
 
 def send_breakout_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL:
-        print("[-] Error: DISCORD_WEBHOOK secret is missing.")
+        print("[-] Error: DISCORD_SECTOR_WEBHOOK URL is missing from environment variables.")
         return
 
     print(f"📤 Uploading {tv_symbol} alert to Discord...")
@@ -226,7 +230,7 @@ def analyze_strict(index_data, df):
     if age_years < 2.0:
         return None
 
-    # We use 10% gap for testing, just like stocks
+    # 10% Squeeze gap
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
     if not (0.00 <= distance_pct <= 10.00):
