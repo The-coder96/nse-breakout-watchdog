@@ -1,10 +1,11 @@
 """
 UNIFIED SECTOR SCANNER (5:15 PM DAILY)
 ==================================================================================
-1. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
-2. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum.
-3. Live Price: Reads the active market price without dropping the current day.
-4. Full Audit Log: Shows live progress, rejection reasons, and final summary.
+1. Universe: All 29 Sector & Thematic Indices from the Sector Heatmap.
+2. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
+3. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum.
+4. Live Price: Reads the active market price without dropping the current day.
+5. Full Audit Log: Shows live progress, rejection reasons, and final summary.
 """
 
 import os
@@ -26,17 +27,22 @@ IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_SECTOR_WEBHOOK")
 
 # ==============================================================================
-# CORRECTED INDEX UNIVERSE MAPPING FOR YAHOO FINANCE
+# COMPLETE 29 INDEX UNIVERSE MAPPING (TradingView -> Yahoo Finance)
 # ==============================================================================
 SECTOR_INDICES = [
+    # Broad Market & Major Benchmark Indices
     {"name": "NIFTY 50", "tv": "NSE:NIFTY", "yf": "^NSEI"},
     {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY", "yf": "^NSEBANK"},
     {"name": "SENSEX", "tv": "BSE:SENSEX", "yf": "^BSESN"},
+    {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"},
+    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "NIFTY_MIDCAP_100.NS"},
+    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSC"},
+
+    # Standard Sectoral Indices
     {"name": "CNXIT", "tv": "NSE:CNXIT", "yf": "^CNXIT"},
     {"name": "CNXAUTO", "tv": "NSE:CNXAUTO", "yf": "^CNXAUTO"},
     {"name": "CNXFMCG", "tv": "NSE:CNXFMCG", "yf": "^CNXFMCG"},
     {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA", "yf": "^CNXPHARMA"},
-    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE", "yf": "NIFTY_HEALTHCARE.NS"}, 
     {"name": "CNXMETAL", "tv": "NSE:CNXMETAL", "yf": "^CNXMETAL"},
     {"name": "CNXREALTY", "tv": "NSE:CNXREALTY", "yf": "^CNXREALTY"},
     {"name": "CNXENERGY", "tv": "NSE:CNXENERGY", "yf": "^CNXENERGY"},
@@ -48,9 +54,16 @@ SECTOR_INDICES = [
     {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK", "yf": "NIFTY_PVT_BANK.NS"},
     {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUM"},
     {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCMDT"},
-    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "NIFTY_MIDCAP_100.NS"},
-    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSC"},
-    {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"}
+
+    # Thematic Indices (From Capital Flow Heatmap)
+    {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE", "yf": "NIFTY_SERV_SECTOR.NS"},
+    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE", "yf": "NIFTY_HEALTHCARE.NS"},
+    {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM", "yf": "NIFTY_IND_TOURISM.NS"},
+    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE", "yf": "NIFTY_IND_DEFENCE.NS"},
+    {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS", "yf": "NIFTY_OIL_AND_GAS.NS"},
+    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL", "yf": "NIFTY_RURAL.NS"},
+    {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV", "yf": "NIFTY_EV.NS"},
+    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL", "yf": "NIFTY_CONSR_DURBL.NS"}
 ]
 
 # ==============================================================================
@@ -72,8 +85,10 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         page.wait_for_timeout(5000)
 
         for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-            try: page.locator(selector).click(timeout=1500)
-            except: pass
+            try:
+                page.locator(selector).click(timeout=1500)
+            except Exception:
+                pass
 
         try:
             page.get_by_text("5Y", exact=True).click(timeout=3000)
@@ -81,10 +96,16 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             page.keyboard.type("1W", delay=100)
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
-            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
+            for _ in range(2):
+                page.keyboard.press("Control+ArrowDown")
+                page.wait_for_timeout(200)
+            for _ in range(3):
+                page.keyboard.press("ArrowLeft")
+                page.wait_for_timeout(100)
         except Exception:
-            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+            for _ in range(6):
+                page.keyboard.press("Control+ArrowDown")
+                page.wait_for_timeout(200)
 
         try:
             page.evaluate('''
@@ -94,7 +115,8 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
                 hide('[data-name="bottom-widget-bar"]');
             ''')
             page.wait_for_timeout(1000)
-        except: pass
+        except Exception:
+            pass
 
         try:
             camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
@@ -115,8 +137,9 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
-    if not DISCORD_WEBHOOK_URL: return
-    
+    if not DISCORD_WEBHOOK_URL:
+        return
+
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
         body = (
@@ -154,14 +177,18 @@ def fetch_yf(yf_symbol):
     for attempt in range(1, 4):
         try:
             raw = yf.download(yf_symbol, period="max", auto_adjust=True, progress=False, timeout=10)
-            if raw is None or raw.empty: return None
-            if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
+            if raw is None or raw.empty:
+                return None
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
             needed = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in raw.columns]
             df = raw[needed].copy()
             df.dropna(subset=["Close", "High"], inplace=True)
             df.sort_index(inplace=True)
-            if not df.empty: return df
-        except: time.sleep(1)
+            if not df.empty:
+                return df
+        except Exception:
+            time.sleep(1)
     return None
 
 def analyze_sector(index_data, df, is_friday):
