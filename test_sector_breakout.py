@@ -1,9 +1,10 @@
 """
-TEST SECTOR BREAKOUT SCANNER (FORCED FRIDAY MOMENTUM MODE + 8% GAP)
+UNIFIED SECTOR SCANNER (5:15 PM DAILY PRODUCTION)
 ==================================================================================
-1. Gap Range: Widened to 8.00% for testing.
-2. Friday Mode: Hardcoded to True so recent ATHs (<1Y) trigger alerts immediately.
-3. Visual Engine: Captures 1W TradingView charts and delivers them to Discord.
+1. Universe: All 29 Sector & Thematic Indices.
+2. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
+3. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum (<5%).
+4. Data Engine: Uses tvDatafeed (TradingView) for 100% accurate historical data.
 """
 
 import os
@@ -204,9 +205,9 @@ def analyze_sector(index_data, df, is_friday):
 
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # Gap filter set to 8.00% for testing
-    if not (0.00 <= distance_pct <= 8.00):
-        return None, f"Gap ({distance_pct:.2f}%) exceeds 8.00% range"
+    # Production gap limit set to strictly <= 5.00%
+    if not (0.00 <= distance_pct <= 5.00):
+        return None, f"Gap ({distance_pct:.2f}%) exceeds 5.00% range"
 
     # Condition 1: 1-to-10 Year Squeeze (Applies Mon-Fri)
     is_multi_year_squeeze = False
@@ -215,7 +216,7 @@ def analyze_sector(index_data, df, is_friday):
         if not (post_ath["Close"] > lifetime_high).any():
             is_multi_year_squeeze = True
 
-    # Condition 2: Absolute Momentum (Applies on Fridays / Test Mode)
+    # Condition 2: Absolute Momentum (Applies on Fridays only)
     is_momentum = False
     if not is_multi_year_squeeze:
         is_momentum = True
@@ -246,13 +247,13 @@ def analyze_sector(index_data, df, is_friday):
 
 def run_scan():
     ist_now = datetime.now(tz=IST)
-    # TEST OVERRIDE: Forced to True so Momentum scan executes immediately
-    is_friday = True  
+    # Production schedule: Momentum scan activates ONLY if today is Friday (weekday == 4)
+    is_friday = (ist_now.weekday() == 4)  
     total_indices = len(SECTOR_INDICES)
 
     print("=" * 80)
     print(f"SECTOR SCANNER EXECUTION: {ist_now.strftime('%d-%b-%Y %I:%M %p IST')}")
-    print("Mode: TEST FORCED FRIDAY MODE (8% Gap + Momentum ATH Enabled)")
+    print(f"Mode: {'FRIDAY FULL SCAN (1-10Y Squeeze + Momentum ATH)' if is_friday else 'MON-THU STRICT SCAN (1-10Y Squeeze Only)'}")
     print("=" * 80)
 
     qualified = []
