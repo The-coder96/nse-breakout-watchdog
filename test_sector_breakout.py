@@ -1,10 +1,9 @@
 """
-UNIFIED SECTOR SCANNER (TRADINGVIEW ENGINE)
+TEST SECTOR BREAKOUT SCANNER (FORCED FRIDAY MOMENTUM MODE + 8% GAP)
 ==================================================================================
-1. Universe: All 29 Sector & Thematic Indices.
-2. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
-3. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum.
-4. Data Engine: Uses tvDatafeed (TradingView) to bypass Yahoo Finance failures.
+1. Gap Range: Widened to 8.00% for testing.
+2. Friday Mode: Hardcoded to True so recent ATHs (<1Y) trigger alerts immediately.
+3. Visual Engine: Captures 1W TradingView charts and delivers them to Discord.
 """
 
 import os
@@ -63,8 +62,6 @@ SECTOR_INDICES = [
 # ==============================================================================
 # TRADINGVIEW DATA ENGINE
 # ==============================================================================
-
-# Initialize Guest Connection to TradingView Data Servers
 try:
     tv = TvDatafeed()
 except Exception as e:
@@ -74,14 +71,12 @@ except Exception as e:
 def fetch_tv_data(exchange, symbol):
     for attempt in range(1, 4):
         try:
-            # Fetch roughly 12 years of daily data (3000 bars)
             df = tv.get_hist(symbol=symbol, exchange=exchange, interval=Interval.in_daily, n_bars=3000)
             if df is not None and not df.empty:
-                # Format to match standard OHLC logic
                 df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
                 df.dropna(subset=["Close", "High"], inplace=True)
                 return df
-        except:
+        except Exception:
             time.sleep(1)
     return None
 
@@ -104,8 +99,10 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         page.wait_for_timeout(5000)
 
         for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-            try: page.locator(selector).click(timeout=1500)
-            except: pass
+            try:
+                page.locator(selector).click(timeout=1500)
+            except Exception:
+                pass
 
         try:
             page.get_by_text("5Y", exact=True).click(timeout=3000)
@@ -113,10 +110,16 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             page.keyboard.type("1W", delay=100)
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
-            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
+            for _ in range(2):
+                page.keyboard.press("Control+ArrowDown")
+                page.wait_for_timeout(200)
+            for _ in range(3):
+                page.keyboard.press("ArrowLeft")
+                page.wait_for_timeout(100)
         except Exception:
-            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+            for _ in range(6):
+                page.keyboard.press("Control+ArrowDown")
+                page.wait_for_timeout(200)
 
         try:
             page.evaluate('''
@@ -126,7 +129,8 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
                 hide('[data-name="bottom-widget-bar"]');
             ''')
             page.wait_for_timeout(1000)
-        except: pass
+        except Exception:
+            pass
 
         try:
             camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
@@ -147,7 +151,8 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
-    if not DISCORD_WEBHOOK_URL: return
+    if not DISCORD_WEBHOOK_URL:
+        return
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -183,9 +188,8 @@ def send_alert_to_discord(tv_symbol, image_path, q):
 # ==============================================================================
 
 def analyze_sector(index_data, df, is_friday):
-    # Minimum 1 year of data required (approx 250 bars)
     if df is None or len(df) < 250:
-        return None, f"Insufficient data (< 250 bars)"
+        return None, "Insufficient data (< 250 bars)"
 
     ist_now = datetime.now(tz=IST)
     today = ist_now.date()
@@ -200,17 +204,18 @@ def analyze_sector(index_data, df, is_friday):
 
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
+    # Gap filter set to 8.00% for testing
     if not (0.00 <= distance_pct <= 8.00):
         return None, f"Gap ({distance_pct:.2f}%) exceeds 8.00% range"
 
-    # Condition 1: STRICT 1-to-10 Year Squeeze (Applies Mon-Fri)
+    # Condition 1: 1-to-10 Year Squeeze (Applies Mon-Fri)
     is_multi_year_squeeze = False
     if 1.0 <= age_years <= 10.0:
         post_ath = df.loc[lh_idx:]
         if not (post_ath["Close"] > lifetime_high).any():
             is_multi_year_squeeze = True
 
-    # Condition 2: Absolute Momentum (Applies ONLY on Fridays)
+    # Condition 2: Absolute Momentum (Applies on Fridays / Test Mode)
     is_momentum = False
     if not is_multi_year_squeeze:
         is_momentum = True
@@ -241,12 +246,13 @@ def analyze_sector(index_data, df, is_friday):
 
 def run_scan():
     ist_now = datetime.now(tz=IST)
-    is_friday = (ist_now.weekday() == 4)
+    # TEST OVERRIDE: Forced to True so Momentum scan executes immediately
+    is_friday = True  
     total_indices = len(SECTOR_INDICES)
 
     print("=" * 80)
     print(f"SECTOR SCANNER EXECUTION: {ist_now.strftime('%d-%b-%Y %I:%M %p IST')}")
-    print(f"Mode: {'FRIDAY FULL SCAN (1-10Y Squeeze + Momentum ATH)' if is_friday else 'MON-THU STRICT SCAN (1-10Y Squeeze Only)'}")
+    print("Mode: TEST FORCED FRIDAY MODE (8% Gap + Momentum ATH Enabled)")
     print("=" * 80)
 
     qualified = []
@@ -254,13 +260,11 @@ def run_scan():
     failed_fetch_count = 0
 
     for i, idx in enumerate(SECTOR_INDICES, 1):
-        # Split TradingView symbol (e.g. "NSE:CNXAUTO") into Exchange and Symbol for the TV Feed
         exchange, symbol = idx["tv"].split(":")
-        
         df = fetch_tv_data(exchange, symbol)
         if df is None:
             failed_fetch_count += 1
-            print(f"[{i:02d}/{total_indices:02d}] ⚠️ SKIPPED    : {idx['name']:<18} | TradingView Data Fetch Failed")
+            print(f"[{i:02d}/{total_indices:02d}] ⚠️ SKIPPED    : {idx['name']:<18} | Data fetch failed")
             continue
 
         res, reason = analyze_sector(idx, df, is_friday)
