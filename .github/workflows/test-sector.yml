@@ -17,7 +17,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install yfinance pandas requests playwright
+          pip install pandas requests playwright
+          pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
           playwright install chromium
           
       - name: Run Sector Scanner
