@@ -1,14 +1,15 @@
 """
-TEST SECTOR BREAKOUT SCANNER (HUMAN-EMULATION LOGIN ENGINE)
+TEST SECTOR BREAKOUT SCANNER (iOS APP DEEP-LINK FIX)
 ==================================================================================
-1. Data Engine: tvDatafeed now accepts credentials to remove the "nologin" warning.
-2. Visual Engine: Playwright Stealth + Human typing emulation to bypass Cloudflare.
-3. Form Submission: Uses native "ENTER" keystroke to bypass broken button selectors.
+1. Deep-Links: Removed < > brackets to restore native Apple iOS Universal Links.
+2. Embeds: Injected Discord API "flags: 4" to suppress the giant TradingView card.
+3. Visual: Uses the native TradingView Camera button for 100% clean charts.
 """
 
 import os
 import time
 import sys
+import json
 import warnings
 import requests
 from datetime import datetime, timedelta, timezone
@@ -32,17 +33,11 @@ SECTOR_INDICES = [
     {"name": "CNXIT", "tv": "NSE:CNXIT"} # Trimmed list for faster testing
 ]
 
-# -----------------------------------------------------------------------
-# FIX 1: Pass credentials into TvDatafeed to silence the "nologin" warning
-# -----------------------------------------------------------------------
 try:
-    if TV_USERNAME and TV_PASSWORD:
-        tv = TvDatafeed(TV_USERNAME, TV_PASSWORD)
-    else:
-        tv = TvDatafeed()
-except Exception as e:
-    print(f"[-] Datafeed login fallback. Proceeding anonymously: {e}")
     tv = TvDatafeed()
+except Exception as e:
+    print(f"[-] Failed to initialize TradingView feed: {e}")
+    sys.exit(1)
 
 def fetch_tv_data(exchange, symbol):
     for attempt in range(1, 4):
@@ -66,26 +61,19 @@ def automate_tv_login(page):
         page.goto("https://www.tradingview.com/", timeout=60000)
         page.wait_for_timeout(4000)
         
-        # 1. Click User Menu
         page.locator('.tv-header__user-menu-button--anonymous').click(timeout=10000)
         page.wait_for_timeout(1500)
         
-        # 2. Click Sign In
         page.locator('button[data-name="header-user-menu-sign-in"]').click(timeout=10000)
         page.wait_for_timeout(3000)
         
-        # 3. Select Email Option (If presented)
         try:
             page.locator('span:has-text("Email")').first.click(timeout=5000)
             page.wait_for_timeout(2000)
         except:
-            pass # Skips safely if already on the username/password screen
+            pass 
         
-        # -----------------------------------------------------------------------
-        # FIX 2: Human typing emulation with press_sequentially & Enter key
-        # -----------------------------------------------------------------------
         print("   -> Typing credentials like a human...")
-        
         user_input = page.locator('input[name="id_username"]')
         user_input.click()
         page.wait_for_timeout(400)
@@ -99,7 +87,6 @@ def automate_tv_login(page):
         pass_input.press_sequentially(TV_PASSWORD, delay=120)
         
         page.wait_for_timeout(1000)
-        
         print("   -> Hitting ENTER to submit form...")
         pass_input.press("Enter")
         
@@ -112,7 +99,7 @@ def automate_tv_login(page):
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    url = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
+    url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
     page.goto(url, timeout=60000)
@@ -134,24 +121,40 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
 
     try:
-        page.evaluate('''
-            const hide = (selector) => { const el = document.querySelector(selector); if (el) el.style.display = 'none'; };
-            hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
-            hide('[class*="layout__area--right"]'); hide('[class*="layout__area--bottom"]');
-            hide('[data-name="bottom-widget-bar"]');
-            hide('#overlap-manager-root'); 
-        ''')
+        print("   -> Utilizing TradingView native camera export...")
+        camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
+        camera_btn.click(timeout=5000)
         page.wait_for_timeout(1000)
-    except: pass
+        
+        with page.expect_download(timeout=10000) as download_info:
+            page.locator('[data-name="save-chart-image"], span:has-text("Download image")').first.click(timeout=5000)
+        
+        download_info.value.save_as(screenshot_path)
+        print("   -> Successfully exported pristine chart image.")
+        
+    except Exception as e:
+        print(f"   -> Camera export failed, utilizing aggressive UI-hide fallback... ({e})")
+        try:
+            page.evaluate('''
+                const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
+                hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
+                hide('[class*="layout__area--right"]'); hide('.widgetbar-wrap');
+                hide('[class*="layout__area--bottom"]'); hide('#overlap-manager-root');
+            ''')
+            page.wait_for_timeout(1000)
+        except: pass
+        page.screenshot(path=screenshot_path)
 
-    page.screenshot(path=screenshot_path)
     return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
     formatted_symbol = tv_symbol.replace(":", "%3A")
     
-    tv_link = f"<https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
+    # -----------------------------------------------------------------------
+    # 1. RAW, NAKED URL (No < >) so Apple iOS recognizes it as an App Link
+    # -----------------------------------------------------------------------
+    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -171,11 +174,19 @@ def send_alert_to_discord(tv_symbol, image_path, q):
 
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
+        
+        # -----------------------------------------------------------------------
+        # 2. DISCORD "FLAGS: 4" to suppress giant URL previews while keeping the image
+        # -----------------------------------------------------------------------
         payload = {
-            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"
+            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}",
+            "flags": 4 
         }
-        try: requests.post(DISCORD_WEBHOOK_URL, data=payload, files=files, timeout=25)
-        except Exception as e: print(f"[-] Exception during Discord webhook POST: {e}")
+        
+        try: 
+            requests.post(DISCORD_WEBHOOK_URL, data={"payload_json": json.dumps(payload)}, files=files, timeout=25)
+        except Exception as e: 
+            print(f"[-] Exception during Discord webhook POST: {e}")
 
     if os.path.exists(image_path): os.remove(image_path)
 
@@ -231,12 +242,12 @@ def run_scan():
             )
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                accept_downloads=True 
             )
             page = context.new_page()
             stealth_sync(page)
             
-            # Authenticate once before looping through charts
             automate_tv_login(page)
 
             for q in sorted(qualified, key=lambda x: x["distance_pct"]):
