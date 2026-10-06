@@ -1,7 +1,7 @@
 name: Test Sector Breakout Scanner
 
 on:
-  workflow_dispatch: # Allows manual execution ONLY. No automatic timer.
+  workflow_dispatch: # Allows manual execution ONLY
 
 jobs:
   sector-scan:
@@ -19,9 +19,11 @@ jobs:
         run: |
           pip install pandas requests playwright tf-playwright-stealth
           pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
-          playwright install chromium
-          
+          playwright install --with-deps chromium
+
       - name: Run Sector Scanner
         env:
           DISCORD_SECTOR_WEBHOOK: ${{ secrets.DISCORD_SECTOR_WEBHOOK }}
+          TV_USERNAME: ${{ secrets.TV_USERNAME }}
+          TV_PASSWORD: ${{ secrets.TV_PASSWORD }}
         run: python test_sector_breakout.py
