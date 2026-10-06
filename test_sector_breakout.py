@@ -1,10 +1,10 @@
 """
-TEST SECTOR BREAKOUT SCANNER (FIXED CHARTS & DIRECT LINKS)
+TEST SECTOR BREAKOUT SCANNER (WIDGET ENGINE + DEEP LINKS)
 ==================================================================================
 1. Gap Range: 8.00% for testing.
-2. Friday Mode: Hardcoded to True so recent ATHs trigger alerts immediately.
-3. Feature Test: Direct, 1-click TradingView URL (no pop-ups, no massive embeds).
-4. Visual Engine: Uses native Playwright screenshots to prevent blank white images.
+2. Friday Mode: Hardcoded to True.
+3. Feature Test: Clickable TradingView URL (www subdomain for mobile app deep-linking).
+4. Visual Engine: Migrated to TradingView Widget API to bypass "Account Frozen" IP bans.
 """
 
 import os
@@ -61,50 +61,39 @@ def fetch_tv_data(exchange, symbol):
 def capture_breakout_chart(tv_symbol, timeframe="1W"):
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    url = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
+    
+    # -----------------------------------------------------------------------
+    # FIX 2: Uses the Embed API to bypass "Account Frozen" and IP bans
+    # -----------------------------------------------------------------------
+    url = f"https://s.tradingview.com/widgetembed/?frameElementId=tradingview_1&symbol={formatted_symbol}&interval={timeframe}&theme=light&style=1&timezone=Asia%2FKolkata"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
-        context = browser.new_context(viewport={"width": 1920, "height": 1080})
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        # Added a realistic User-Agent to act like a real PC
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 720},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
         page = context.new_page()
         
         page.goto(url, timeout=60000)
-        # Wait for the actual chart canvas to appear
-        try: page.wait_for_selector('.chart-gui-wrapper', timeout=15000)
-        except: pass
-        page.wait_for_timeout(3000)
-
-        for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-            try: page.locator(selector).click(timeout=1500)
-            except: pass
+        page.wait_for_timeout(4000) # Give candles time to load
 
         try:
-            page.get_by_text("5Y", exact=True).click(timeout=3000)
-            page.wait_for_timeout(1000)
-            page.keyboard.type("1W", delay=100)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(4000) # Give extra time for new candles to render
-            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
-        except:
-            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+            # Click the chart and zoom out slightly
+            page.click("body")
+            page.wait_for_timeout(500)
+            for _ in range(5):
+                page.keyboard.press("Control+ArrowDown")
+                page.wait_for_timeout(200)
+            for _ in range(3):
+                page.keyboard.press("ArrowLeft")
+                page.wait_for_timeout(100)
+        except Exception:
+            pass
 
-        # Force hide all UI elements and invisible overlays that cause the white screen
-        try:
-            page.evaluate('''
-                const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
-                hide('[class*="layout__area--left"]'); 
-                hide('[class*="layout__area--top"]');
-                hide('[class*="layout__area--right"]'); 
-                hide('[class*="layout__area--bottom"]');
-                hide('[data-name="bottom-widget-bar"]');
-                hide('#overlap-manager-root'); /* Hides sign-in popups */
-            ''')
-            page.wait_for_timeout(1500)
-        except: pass
-
-        # Native Playwright screenshot bypasses the TV export bug
+        # Clean native screenshot of the widget
         page.screenshot(path=screenshot_path)
         browser.close()
         return screenshot_path
@@ -112,9 +101,12 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
 
-    # DIRECT LINK FORMATTING
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_link = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}"
+    
+    # -----------------------------------------------------------------------
+    # FIX 1: URL reset to 'www.' so the iOS/Android TradingView App catches it
+    # -----------------------------------------------------------------------
+    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}"
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -135,9 +127,9 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
         
-        # Wrapped in < > to prevent the massive preview card, while keeping it a 1-click link
+        # Wrapped the URL in < > to hide the massive preview card, keeping only the clickable text
         payload = {
-            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n🔎 **Detailed Analysis:** <{tv_link}>"
+            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n🔎 **[Click here for detailed analysis](<{tv_link}>)**"
         }
         
         try:
