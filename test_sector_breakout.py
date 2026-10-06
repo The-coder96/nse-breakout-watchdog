@@ -1,9 +1,10 @@
 """
-TEST SECTOR BREAKOUT SCANNER (WITH DYNAMIC TRADINGVIEW LINKS)
+TEST SECTOR BREAKOUT SCANNER (FIXED CHARTS & DIRECT LINKS)
 ==================================================================================
 1. Gap Range: 8.00% for testing.
 2. Friday Mode: Hardcoded to True so recent ATHs trigger alerts immediately.
-3. Feature Test: Clickable TradingView interactive chart link added to Discord.
+3. Feature Test: Direct, 1-click TradingView URL (no pop-ups, no massive embeds).
+4. Visual Engine: Uses native Playwright screenshots to prevent blank white images.
 """
 
 import os
@@ -60,15 +61,19 @@ def fetch_tv_data(exchange, symbol):
 def capture_breakout_chart(tv_symbol, timeframe="1W"):
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
+    url = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        context = browser.new_context(viewport={"width": 1920, "height": 1080}, accept_downloads=True)
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"])
+        context = browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
+        
         page.goto(url, timeout=60000)
-        page.wait_for_timeout(5000)
+        # Wait for the actual chart canvas to appear
+        try: page.wait_for_selector('.chart-gui-wrapper', timeout=15000)
+        except: pass
+        page.wait_for_timeout(3000)
 
         for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
             try: page.locator(selector).click(timeout=1500)
@@ -79,46 +84,37 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             page.wait_for_timeout(1000)
             page.keyboard.type("1W", delay=100)
             page.keyboard.press("Enter")
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(4000) # Give extra time for new candles to render
             for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
             for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
         except:
             for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
 
+        # Force hide all UI elements and invisible overlays that cause the white screen
         try:
             page.evaluate('''
-                const hide = (selector) => { const el = document.querySelector(selector); if (el) el.style.display = 'none'; };
-                hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
-                hide('[class*="layout__area--right"]'); hide('[class*="layout__area--bottom"]');
+                const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
+                hide('[class*="layout__area--left"]'); 
+                hide('[class*="layout__area--top"]');
+                hide('[class*="layout__area--right"]'); 
+                hide('[class*="layout__area--bottom"]');
                 hide('[data-name="bottom-widget-bar"]');
+                hide('#overlap-manager-root'); /* Hides sign-in popups */
             ''')
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(1500)
         except: pass
 
-        try:
-            camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
-            camera_btn.click(timeout=5000)
-            page.wait_for_timeout(1000)
-            with page.expect_download(timeout=10000) as download_info:
-                page.locator('[data-name="save-chart-image"], span:has-text("Download image")').first.click(timeout=5000)
-            download_info.value.save_as(screenshot_path)
-        except:
-            try:
-                with page.expect_download(timeout=10000) as download_info:
-                    page.keyboard.press("Control+Alt+s")
-                download_info.value.save_as(screenshot_path)
-            except:
-                page.screenshot(path=screenshot_path)
-
+        # Native Playwright screenshot bypasses the TV export bug
+        page.screenshot(path=screenshot_path)
         browser.close()
         return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
 
-    # GENERATE DYNAMIC TRADINGVIEW LINK
+    # DIRECT LINK FORMATTING
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}"
+    tv_link = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}"
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -139,9 +135,9 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
         
-        # INJECT THE LINK AT THE BOTTOM OF THE MESSAGE
+        # Wrapped in < > to prevent the massive preview card, while keeping it a 1-click link
         payload = {
-            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n🔎 **[To do detailed analysis click here]({tv_link})**"
+            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n🔎 **Detailed Analysis:** <{tv_link}>"
         }
         
         try:
