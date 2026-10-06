@@ -1,15 +1,14 @@
 """
-TEST SECTOR BREAKOUT SCANNER (iOS APP DEEP-LINK FIX)
+TEST SECTOR BREAKOUT SCANNER (NOTION-STYLE RAW LINK INTEGRATION)
 ==================================================================================
-1. Deep-Links: Removed < > brackets to restore native Apple iOS Universal Links.
-2. Embeds: Injected Discord API "flags: 4" to suppress the giant TradingView card.
-3. Visual: Uses the native TradingView Camera button for 100% clean charts.
+1. Link Formatting: Exactly mirrors the Notion project's raw string concatenation.
+2. Embeds: Removed Discord API flags that corrupted iOS Universal Links.
+3. Visual Engine: Natively exports pristine charts using the TradingView Camera.
 """
 
 import os
 import time
 import sys
-import json
 import warnings
 import requests
 from datetime import datetime, timedelta, timezone
@@ -30,7 +29,18 @@ SECTOR_INDICES = [
     {"name": "NIFTY 50", "tv": "NSE:NIFTY"}, {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY"},
     {"name": "SENSEX", "tv": "BSE:SENSEX"}, {"name": "CNX500", "tv": "NSE:CNX500"},
     {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP"}, {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP"},
-    {"name": "CNXIT", "tv": "NSE:CNXIT"} # Trimmed list for faster testing
+    {"name": "CNXIT", "tv": "NSE:CNXIT"}, {"name": "CNXAUTO", "tv": "NSE:CNXAUTO"},
+    {"name": "CNXFMCG", "tv": "NSE:CNXFMCG"}, {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA"},
+    {"name": "CNXMETAL", "tv": "NSE:CNXMETAL"}, {"name": "CNXREALTY", "tv": "NSE:CNXREALTY"},
+    {"name": "CNXENERGY", "tv": "NSE:CNXENERGY"}, {"name": "CNXINFRA", "tv": "NSE:CNXINFRA"},
+    {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA"}, {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE"},
+    {"name": "CNXPSE", "tv": "NSE:CNXPSE"}, {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK"},
+    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK"}, {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION"},
+    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES"}, {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE"},
+    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE"}, {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM"},
+    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE"}, {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS"},
+    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL"}, {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV"},
+    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL"}
 ]
 
 try:
@@ -152,7 +162,7 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     formatted_symbol = tv_symbol.replace(":", "%3A")
     
     # -----------------------------------------------------------------------
-    # 1. RAW, NAKED URL (No < >) so Apple iOS recognizes it as an App Link
+    # NOTION-STYLE RAW LINK (Mirrors the logic from your other project exactly)
     # -----------------------------------------------------------------------
     tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
 
@@ -172,19 +182,13 @@ def send_alert_to_discord(tv_symbol, image_path, q):
             f"• Proximity to Max High: {q['distance_pct']:.2f}%\n"
         )
 
+    # Reverted to standard data content string upload, exactly like the Notion script
+    discord_message = f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"
+
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
-        
-        # -----------------------------------------------------------------------
-        # 2. DISCORD "FLAGS: 4" to suppress giant URL previews while keeping the image
-        # -----------------------------------------------------------------------
-        payload = {
-            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}",
-            "flags": 4 
-        }
-        
         try: 
-            requests.post(DISCORD_WEBHOOK_URL, data={"payload_json": json.dumps(payload)}, files=files, timeout=25)
+            requests.post(DISCORD_WEBHOOK_URL, data={"content": discord_message}, files=files, timeout=25)
         except Exception as e: 
             print(f"[-] Exception during Discord webhook POST: {e}")
 
@@ -240,6 +244,7 @@ def run_scan():
                 headless=True, 
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
             )
+            # CRITICAL: accept_downloads=True is required to intercept the TradingView camera export
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
