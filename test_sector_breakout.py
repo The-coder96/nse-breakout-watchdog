@@ -1,9 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (AUTHENTICATED ENGINE)
+TEST SECTOR BREAKOUT SCANNER (HUMAN-EMULATION LOGIN ENGINE)
 ==================================================================================
-1. Links: Forces 1W timeframe directly in the URL (&interval=1W).
-2. Visual Engine: Uses persistent browser session for speed.
-3. Bot Bypass: Uses tf-playwright-stealth + automated UI login via credentials.
+1. Data Engine: tvDatafeed now accepts credentials to remove the "nologin" warning.
+2. Visual Engine: Playwright Stealth + Human typing emulation to bypass Cloudflare.
+3. Form Submission: Uses native "ENTER" keystroke to bypass broken button selectors.
 """
 
 import os
@@ -29,25 +29,20 @@ SECTOR_INDICES = [
     {"name": "NIFTY 50", "tv": "NSE:NIFTY"}, {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY"},
     {"name": "SENSEX", "tv": "BSE:SENSEX"}, {"name": "CNX500", "tv": "NSE:CNX500"},
     {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP"}, {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP"},
-    {"name": "CNXIT", "tv": "NSE:CNXIT"}, {"name": "CNXAUTO", "tv": "NSE:CNXAUTO"},
-    {"name": "CNXFMCG", "tv": "NSE:CNXFMCG"}, {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA"},
-    {"name": "CNXMETAL", "tv": "NSE:CNXMETAL"}, {"name": "CNXREALTY", "tv": "NSE:CNXREALTY"},
-    {"name": "CNXENERGY", "tv": "NSE:CNXENERGY"}, {"name": "CNXINFRA", "tv": "NSE:CNXINFRA"},
-    {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA"}, {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE"},
-    {"name": "CNXPSE", "tv": "NSE:CNXPSE"}, {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK"},
-    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK"}, {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION"},
-    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES"}, {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE"},
-    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE"}, {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM"},
-    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE"}, {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS"},
-    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL"}, {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV"},
-    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL"}
+    {"name": "CNXIT", "tv": "NSE:CNXIT"} # Trimmed list for faster testing
 ]
 
+# -----------------------------------------------------------------------
+# FIX 1: Pass credentials into TvDatafeed to silence the "nologin" warning
+# -----------------------------------------------------------------------
 try:
-    tv = TvDatafeed()
+    if TV_USERNAME and TV_PASSWORD:
+        tv = TvDatafeed(TV_USERNAME, TV_PASSWORD)
+    else:
+        tv = TvDatafeed()
 except Exception as e:
-    print(f"[-] Failed to initialize TradingView feed: {e}")
-    sys.exit(1)
+    print(f"[-] Datafeed login fallback. Proceeding anonymously: {e}")
+    tv = TvDatafeed()
 
 def fetch_tv_data(exchange, symbol):
     for attempt in range(1, 4):
@@ -63,36 +58,56 @@ def fetch_tv_data(exchange, symbol):
 
 def automate_tv_login(page):
     if not TV_USERNAME or not TV_PASSWORD:
-        print("⚠️ No TV_USERNAME or TV_PASSWORD found in secrets. Proceeding anonymously.")
+        print("⚠️ No credentials found in secrets. Proceeding anonymously.")
         return
 
-    print("🔑 Attempting live TradingView login via credentials...")
+    print("🔑 Attempting live TradingView login via human-emulation...")
     try:
         page.goto("https://www.tradingview.com/", timeout=60000)
+        page.wait_for_timeout(4000)
+        
+        # 1. Click User Menu
+        page.locator('.tv-header__user-menu-button--anonymous').click(timeout=10000)
+        page.wait_for_timeout(1500)
+        
+        # 2. Click Sign In
+        page.locator('button[data-name="header-user-menu-sign-in"]').click(timeout=10000)
         page.wait_for_timeout(3000)
         
-        # Click User icon
-        page.locator('.tv-header__user-menu-button--anonymous').click(timeout=5000)
-        # Click Sign in
-        page.locator('button[data-name="header-user-menu-sign-in"]').click(timeout=5000)
-        page.wait_for_timeout(2000)
+        # 3. Select Email Option (If presented)
+        try:
+            page.locator('span:has-text("Email")').first.click(timeout=5000)
+            page.wait_for_timeout(2000)
+        except:
+            pass # Skips safely if already on the username/password screen
         
-        # Select Email 
-        page.locator('span:has-text("Email")').first.click(timeout=5000)
+        # -----------------------------------------------------------------------
+        # FIX 2: Human typing emulation with press_sequentially & Enter key
+        # -----------------------------------------------------------------------
+        print("   -> Typing credentials like a human...")
+        
+        user_input = page.locator('input[name="id_username"]')
+        user_input.click()
+        page.wait_for_timeout(400)
+        user_input.press_sequentially(TV_USERNAME, delay=120)
+        
+        page.wait_for_timeout(800)
+        
+        pass_input = page.locator('input[name="id_password"]')
+        pass_input.click()
+        page.wait_for_timeout(400)
+        pass_input.press_sequentially(TV_PASSWORD, delay=120)
+        
         page.wait_for_timeout(1000)
         
-        # Fill out form
-        page.fill('input[name="id_username"]', TV_USERNAME)
-        page.fill('input[name="id_password"]', TV_PASSWORD)
+        print("   -> Hitting ENTER to submit form...")
+        pass_input.press("Enter")
         
-        # Submit
-        page.locator('button[type="submit"]').first.click(timeout=5000)
-        
-        print("⏳ Waiting 8 seconds for authentication to process...")
-        page.wait_for_timeout(8000)
+        print("⏳ Waiting 12 seconds for authentication & Cloudflare checks to clear...")
+        page.wait_for_timeout(12000)
         print("✅ Login sequence completed.")
     except Exception as e:
-        print(f"⚠️ Login sequence failed (Cloudflare CAPTCHA may be blocking the bot): {e}")
+        print(f"⚠️ Login sequence failed: {e}")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
@@ -101,7 +116,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
     page.goto(url, timeout=60000)
-    page.wait_for_timeout(5000)
+    page.wait_for_timeout(6000)
 
     for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
         try: page.locator(selector).click(timeout=1500)
@@ -134,12 +149,8 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
-
     formatted_symbol = tv_symbol.replace(":", "%3A")
     
-    # -----------------------------------------------------------------------
-    # LINK FIX: Force 1W interval directly in the URL 
-    # -----------------------------------------------------------------------
     tv_link = f"<https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
     if q["type"] == "SQUEEZE":
@@ -163,14 +174,10 @@ def send_alert_to_discord(tv_symbol, image_path, q):
         payload = {
             "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"
         }
-        
-        try:
-            requests.post(DISCORD_WEBHOOK_URL, data=payload, files=files, timeout=25)
-        except Exception as e:
-            print(f"[-] Exception during Discord webhook POST: {e}")
+        try: requests.post(DISCORD_WEBHOOK_URL, data=payload, files=files, timeout=25)
+        except Exception as e: print(f"[-] Exception during Discord webhook POST: {e}")
 
-    if os.path.exists(image_path):
-        os.remove(image_path)
+    if os.path.exists(image_path): os.remove(image_path)
 
 def analyze_sector(index_data, df, is_friday):
     if df is None or len(df) < 250: return None, "Insufficient data"
@@ -188,13 +195,9 @@ def analyze_sector(index_data, df, is_friday):
     is_multi_year_squeeze = False
     if 1.0 <= age_years <= 10.0:
         post_ath = df.loc[lh_idx:]
-        if not (post_ath["Close"] > lifetime_high).any():
-            is_multi_year_squeeze = True
+        if not (post_ath["Close"] > lifetime_high).any(): is_multi_year_squeeze = True
 
-    is_momentum = False
-    if not is_multi_year_squeeze:
-        is_momentum = True
-
+    is_momentum = not is_multi_year_squeeze
     if is_multi_year_squeeze: alert_type = "SQUEEZE"
     elif is_momentum and is_friday: alert_type = "MOMENTUM"
     else: return None, "Filtered by Age/Condition"
@@ -207,7 +210,7 @@ def analyze_sector(index_data, df, is_friday):
 
 def run_scan():
     ist_now = datetime.now(tz=IST)
-    is_friday = True  # TEST OVERRIDE
+    is_friday = True 
     total_indices = len(SECTOR_INDICES)
 
     qualified = []
