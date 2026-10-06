@@ -200,8 +200,8 @@ def analyze_sector(index_data, df, is_friday):
 
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    if not (0.00 <= distance_pct <= 5.00):
-        return None, f"Gap ({distance_pct:.2f}%) exceeds 5.00% range"
+    if not (0.00 <= distance_pct <= 8.00):
+        return None, f"Gap ({distance_pct:.2f}%) exceeds 8.00% range"
 
     # Condition 1: STRICT 1-to-10 Year Squeeze (Applies Mon-Fri)
     is_multi_year_squeeze = False
