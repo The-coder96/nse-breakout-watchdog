@@ -1,10 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (WIDGET ENGINE + DEEP LINKS)
+TEST SECTOR BREAKOUT SCANNER (PLAYWRIGHT STEALTH ENGINE)
 ==================================================================================
-1. Gap Range: 8.00% for testing.
-2. Friday Mode: Hardcoded to True.
-3. Feature Test: Clickable TradingView URL (www subdomain for mobile app deep-linking).
-4. Visual Engine: Migrated to TradingView Widget API to bypass "Account Frozen" IP bans.
+1. Links: Uses RAW URLs wrapped in < > to bypass Discord popups and embeds.
+2. Visual Engine: Scrapes the live TradingView chart.
+3. Bot Bypass: Uses playwright-stealth to mask the headless browser fingerprint.
 """
 
 import os
@@ -16,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from tvDatafeed import TvDatafeed, Interval
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
@@ -26,18 +26,7 @@ SECTOR_INDICES = [
     {"name": "NIFTY 50", "tv": "NSE:NIFTY"}, {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY"},
     {"name": "SENSEX", "tv": "BSE:SENSEX"}, {"name": "CNX500", "tv": "NSE:CNX500"},
     {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP"}, {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP"},
-    {"name": "CNXIT", "tv": "NSE:CNXIT"}, {"name": "CNXAUTO", "tv": "NSE:CNXAUTO"},
-    {"name": "CNXFMCG", "tv": "NSE:CNXFMCG"}, {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA"},
-    {"name": "CNXMETAL", "tv": "NSE:CNXMETAL"}, {"name": "CNXREALTY", "tv": "NSE:CNXREALTY"},
-    {"name": "CNXENERGY", "tv": "NSE:CNXENERGY"}, {"name": "CNXINFRA", "tv": "NSE:CNXINFRA"},
-    {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA"}, {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE"},
-    {"name": "CNXPSE", "tv": "NSE:CNXPSE"}, {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK"},
-    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK"}, {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION"},
-    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES"}, {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE"},
-    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE"}, {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM"},
-    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE"}, {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS"},
-    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL"}, {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV"},
-    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL"}
+    {"name": "CNXIT", "tv": "NSE:CNXIT"}
 ]
 
 try:
@@ -59,41 +48,59 @@ def fetch_tv_data(exchange, symbol):
     return None
 
 def capture_breakout_chart(tv_symbol, timeframe="1W"):
-    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
+    print(f"📸 Generating stealth weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    
-    # -----------------------------------------------------------------------
-    # FIX 2: Uses the Embed API to bypass "Account Frozen" and IP bans
-    # -----------------------------------------------------------------------
-    url = f"https://s.tradingview.com/widgetembed/?frameElementId=tradingview_1&symbol={formatted_symbol}&interval={timeframe}&theme=light&style=1&timezone=Asia%2FKolkata"
+    url = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        # Added a realistic User-Agent to act like a real PC
+        # Launching with standard Chrome arguments to look normal
+        browser = p.chromium.launch(
+            headless=True, 
+            args=[
+                "--no-sandbox", 
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
+        )
         context = browser.new_context(
-            viewport={"width": 1280, "height": 720},
+            viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         page = context.new_page()
         
+        # INJECT STEALTH TO BYPASS CLOUDFLARE/BOT DETECTION
+        stealth_sync(page)
+        
         page.goto(url, timeout=60000)
-        page.wait_for_timeout(4000) # Give candles time to load
+        page.wait_for_timeout(6000) # Give extra time to bypass Cloudflare checks
+
+        for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
+            try: page.locator(selector).click(timeout=1500)
+            except: pass
 
         try:
-            # Click the chart and zoom out slightly
-            page.click("body")
-            page.wait_for_timeout(500)
-            for _ in range(5):
-                page.keyboard.press("Control+ArrowDown")
-                page.wait_for_timeout(200)
-            for _ in range(3):
-                page.keyboard.press("ArrowLeft")
-                page.wait_for_timeout(100)
-        except Exception:
-            pass
+            page.get_by_text("5Y", exact=True).click(timeout=3000)
+            page.wait_for_timeout(1000)
+            page.keyboard.type("1W", delay=100)
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(3000) 
+            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
+        except:
+            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
 
-        # Clean native screenshot of the widget
+        try:
+            page.evaluate('''
+                const hide = (selector) => { const el = document.querySelector(selector); if (el) el.style.display = 'none'; };
+                hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
+                hide('[class*="layout__area--right"]'); hide('[class*="layout__area--bottom"]');
+                hide('[data-name="bottom-widget-bar"]');
+                hide('#overlap-manager-root'); 
+            ''')
+            page.wait_for_timeout(1000)
+        except: pass
+
         page.screenshot(path=screenshot_path)
         browser.close()
         return screenshot_path
@@ -103,10 +110,8 @@ def send_alert_to_discord(tv_symbol, image_path, q):
 
     formatted_symbol = tv_symbol.replace(":", "%3A")
     
-    # -----------------------------------------------------------------------
-    # FIX 1: URL reset to 'www.' so the iOS/Android TradingView App catches it
-    # -----------------------------------------------------------------------
-    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}"
+    # RAW URL formatted to prevent Embed card, while avoiding "Leaving Discord" warning
+    tv_link = f"<https://in.tradingview.com/chart/?symbol={formatted_symbol}>"
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -126,10 +131,8 @@ def send_alert_to_discord(tv_symbol, image_path, q):
 
     with open(image_path, "rb") as f:
         files = {"file": (image_path, f, "image/png")}
-        
-        # Wrapped the URL in < > to hide the massive preview card, keeping only the clickable text
         payload = {
-            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n🔎 **[Click here for detailed analysis](<{tv_link}>)**"
+            "content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"
         }
         
         try:
@@ -141,11 +144,9 @@ def send_alert_to_discord(tv_symbol, image_path, q):
         os.remove(image_path)
 
 def analyze_sector(index_data, df, is_friday):
-    if df is None or len(df) < 250: return None, "Insufficient data (< 250 bars)"
-
+    if df is None or len(df) < 250: return None, "Insufficient data"
     ist_now = datetime.now(tz=IST)
     today = ist_now.date()
-
     current_price = float(df["Close"].iloc[-1])
     lifetime_high = float(df["High"].max())
     lh_idx = df["High"].idxmax()
@@ -153,8 +154,7 @@ def analyze_sector(index_data, df, is_friday):
     age_years = (today - lh_date).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    if not (0.00 <= distance_pct <= 8.00):
-        return None, f"Gap ({distance_pct:.2f}%) exceeds 8.00% range"
+    if not (0.00 <= distance_pct <= 8.00): return None, f"Gap ({distance_pct:.2f}%) exceeds 8.00%"
 
     is_multi_year_squeeze = False
     if 1.0 <= age_years <= 10.0:
@@ -168,10 +168,7 @@ def analyze_sector(index_data, df, is_friday):
 
     if is_multi_year_squeeze: alert_type = "SQUEEZE"
     elif is_momentum and is_friday: alert_type = "MOMENTUM"
-    else:
-        if age_years < 1.0: return None, f"Ceiling too recent ({age_years:.2f}Y) — Mon-Thu requires 1-10Y"
-        elif age_years > 10.0: return None, f"Ceiling too old ({age_years:.2f}Y) — exceeds 10-year limit"
-        else: return None, "Integrity broken (close found above ceiling)"
+    else: return None, "Filtered by Age/Condition"
 
     return {
         "name": index_data["name"], "tv_symbol": index_data["tv"], "current_price": current_price,
@@ -184,41 +181,21 @@ def run_scan():
     is_friday = True  # TEST OVERRIDE
     total_indices = len(SECTOR_INDICES)
 
-    print("=" * 80)
-    print(f"SECTOR SCANNER EXECUTION: {ist_now.strftime('%d-%b-%Y %I:%M %p IST')}")
-    print("Mode: TEST FORCED FRIDAY MODE (8% Gap + Momentum ATH Enabled)")
-    print("=" * 80)
-
     qualified = []
-    thrown_out_count = 0
-    failed_fetch_count = 0
-
     for i, idx in enumerate(SECTOR_INDICES, 1):
         exchange, symbol = idx["tv"].split(":")
         df = fetch_tv_data(exchange, symbol)
-        if df is None:
-            failed_fetch_count += 1
-            print(f"[{i:02d}/{total_indices:02d}] ⚠️ SKIPPED    : {idx['name']:<18} | Data fetch failed")
-            continue
-
+        if df is None: continue
         res, reason = analyze_sector(idx, df, is_friday)
-        if res:
-            qualified.append(res)
-            print(f"[{i:02d}/{total_indices:02d}] ✅ SHORTLISTED: {idx['name']:<18} | {res['type']} (Gap: {res['distance_pct']:.2f}%, Age: {res['age_years']:.2f}Y)")
-        else:
-            thrown_out_count += 1
-            print(f"[{i:02d}/{total_indices:02d}] ❌ THROWN OUT : {idx['name']:<18} | {reason}")
+        if res: qualified.append(res)
 
     if qualified:
-        print(f"\n[!] Initializing Visual Engine for {len(qualified)} index(es)...")
         for q in sorted(qualified, key=lambda x: x["distance_pct"]):
             try:
                 screenshot_path = capture_breakout_chart(q['tv_symbol'], timeframe="1W")
                 send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
             except Exception as e:
                 print(f"[-] Failed to deliver chart for {q['name']}: {e}")
-    else:
-        print("\n0 sector indices met alert criteria today.")
 
 if __name__ == "__main__":
     run_scan()
