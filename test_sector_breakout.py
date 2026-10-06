@@ -1,11 +1,10 @@
 """
-UNIFIED SECTOR SCANNER (5:15 PM DAILY)
+UNIFIED SECTOR SCANNER (TRADINGVIEW ENGINE)
 ==================================================================================
-1. Universe: All 29 Sector & Thematic Indices from the Sector Heatmap.
+1. Universe: All 29 Sector & Thematic Indices.
 2. Mon-Thu Rule: Alerts ONLY on 1 to 10 Year Virgin Ceilings within a 5% Gap.
 3. Friday Rule: Alerts on 1 to 10 Year Squeezes AND Absolute ATH Momentum.
-4. Live Price: Reads the active market price without dropping the current day.
-5. Full Audit Log: Shows live progress, rejection reasons, and final summary.
+4. Data Engine: Uses tvDatafeed (TradingView) to bypass Yahoo Finance failures.
 """
 
 import os
@@ -15,7 +14,7 @@ import warnings
 import requests
 from datetime import datetime, timedelta, timezone
 import pandas as pd
-import yfinance as yf
+from tvDatafeed import TvDatafeed, Interval
 from playwright.sync_api import sync_playwright
 
 warnings.filterwarnings("ignore")
@@ -27,44 +26,64 @@ IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_SECTOR_WEBHOOK")
 
 # ==============================================================================
-# COMPLETE 29 INDEX UNIVERSE MAPPING (TradingView -> Yahoo Finance)
+# UNIFIED TRADINGVIEW INDEX UNIVERSE (29 INDICES)
 # ==============================================================================
 SECTOR_INDICES = [
-    # Broad Market & Major Benchmark Indices
-    {"name": "NIFTY 50", "tv": "NSE:NIFTY", "yf": "^NSEI"},
-    {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY", "yf": "^NSEBANK"},
-    {"name": "SENSEX", "tv": "BSE:SENSEX", "yf": "^BSESN"},
-    {"name": "CNX500", "tv": "NSE:CNX500", "yf": "^CRSLDX"},
-    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP", "yf": "NIFTY_MIDCAP_100.NS"},
-    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP", "yf": "^CNXSC"},
-
-    # Standard Sectoral Indices
-    {"name": "CNXIT", "tv": "NSE:CNXIT", "yf": "^CNXIT"},
-    {"name": "CNXAUTO", "tv": "NSE:CNXAUTO", "yf": "^CNXAUTO"},
-    {"name": "CNXFMCG", "tv": "NSE:CNXFMCG", "yf": "^CNXFMCG"},
-    {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA", "yf": "^CNXPHARMA"},
-    {"name": "CNXMETAL", "tv": "NSE:CNXMETAL", "yf": "^CNXMETAL"},
-    {"name": "CNXREALTY", "tv": "NSE:CNXREALTY", "yf": "^CNXREALTY"},
-    {"name": "CNXENERGY", "tv": "NSE:CNXENERGY", "yf": "^CNXENERGY"},
-    {"name": "CNXINFRA", "tv": "NSE:CNXINFRA", "yf": "^CNXINFRA"},
-    {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA", "yf": "^CNXMEDIA"},
-    {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE", "yf": "NIFTY_FIN_SERVICE.NS"},
-    {"name": "CNXPSE", "tv": "NSE:CNXPSE", "yf": "^CNXPSE"},
-    {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK", "yf": "^CNXPSUBANK"},
-    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK", "yf": "NIFTY_PVT_BANK.NS"},
-    {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION", "yf": "^CNXCONSUM"},
-    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES", "yf": "^CNXCMDT"},
-
-    # Thematic Indices (From Capital Flow Heatmap)
-    {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE", "yf": "NIFTY_SERV_SECTOR.NS"},
-    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE", "yf": "NIFTY_HEALTHCARE.NS"},
-    {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM", "yf": "NIFTY_IND_TOURISM.NS"},
-    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE", "yf": "NIFTY_IND_DEFENCE.NS"},
-    {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS", "yf": "NIFTY_OIL_AND_GAS.NS"},
-    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL", "yf": "NIFTY_RURAL.NS"},
-    {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV", "yf": "NIFTY_EV.NS"},
-    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL", "yf": "NIFTY_CONSR_DURBL.NS"}
+    {"name": "NIFTY 50", "tv": "NSE:NIFTY"},
+    {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY"},
+    {"name": "SENSEX", "tv": "BSE:SENSEX"},
+    {"name": "CNX500", "tv": "NSE:CNX500"},
+    {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP"},
+    {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP"},
+    {"name": "CNXIT", "tv": "NSE:CNXIT"},
+    {"name": "CNXAUTO", "tv": "NSE:CNXAUTO"},
+    {"name": "CNXFMCG", "tv": "NSE:CNXFMCG"},
+    {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA"},
+    {"name": "CNXMETAL", "tv": "NSE:CNXMETAL"},
+    {"name": "CNXREALTY", "tv": "NSE:CNXREALTY"},
+    {"name": "CNXENERGY", "tv": "NSE:CNXENERGY"},
+    {"name": "CNXINFRA", "tv": "NSE:CNXINFRA"},
+    {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA"},
+    {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE"},
+    {"name": "CNXPSE", "tv": "NSE:CNXPSE"},
+    {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK"},
+    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK"},
+    {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION"},
+    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES"},
+    {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE"},
+    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE"},
+    {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM"},
+    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE"},
+    {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS"},
+    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL"},
+    {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV"},
+    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL"}
 ]
+
+# ==============================================================================
+# TRADINGVIEW DATA ENGINE
+# ==============================================================================
+
+# Initialize Guest Connection to TradingView Data Servers
+try:
+    tv = TvDatafeed()
+except Exception as e:
+    print(f"[-] Failed to initialize TradingView feed: {e}")
+    sys.exit(1)
+
+def fetch_tv_data(exchange, symbol):
+    for attempt in range(1, 4):
+        try:
+            # Fetch roughly 12 years of daily data (3000 bars)
+            df = tv.get_hist(symbol=symbol, exchange=exchange, interval=Interval.in_daily, n_bars=3000)
+            if df is not None and not df.empty:
+                # Format to match standard OHLC logic
+                df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+                df.dropna(subset=["Close", "High"], inplace=True)
+                return df
+        except:
+            time.sleep(1)
+    return None
 
 # ==============================================================================
 # VISUAL CAPTURE & DISCORD ENGINE
@@ -85,10 +104,8 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         page.wait_for_timeout(5000)
 
         for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-            try:
-                page.locator(selector).click(timeout=1500)
-            except Exception:
-                pass
+            try: page.locator(selector).click(timeout=1500)
+            except: pass
 
         try:
             page.get_by_text("5Y", exact=True).click(timeout=3000)
@@ -96,16 +113,10 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
             page.keyboard.type("1W", delay=100)
             page.keyboard.press("Enter")
             page.wait_for_timeout(2000)
-            for _ in range(2):
-                page.keyboard.press("Control+ArrowDown")
-                page.wait_for_timeout(200)
-            for _ in range(3):
-                page.keyboard.press("ArrowLeft")
-                page.wait_for_timeout(100)
+            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
         except Exception:
-            for _ in range(6):
-                page.keyboard.press("Control+ArrowDown")
-                page.wait_for_timeout(200)
+            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
 
         try:
             page.evaluate('''
@@ -115,8 +126,7 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
                 hide('[data-name="bottom-widget-bar"]');
             ''')
             page.wait_for_timeout(1000)
-        except Exception:
-            pass
+        except: pass
 
         try:
             camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
@@ -137,8 +147,7 @@ def capture_breakout_chart(tv_symbol, timeframe="1W"):
         return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
-    if not DISCORD_WEBHOOK_URL:
-        return
+    if not DISCORD_WEBHOOK_URL: return
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -173,27 +182,10 @@ def send_alert_to_discord(tv_symbol, image_path, q):
 # CORE SCANNER LOGIC
 # ==============================================================================
 
-def fetch_yf(yf_symbol):
-    for attempt in range(1, 4):
-        try:
-            raw = yf.download(yf_symbol, period="max", auto_adjust=True, progress=False, timeout=10)
-            if raw is None or raw.empty:
-                return None
-            if isinstance(raw.columns, pd.MultiIndex):
-                raw.columns = raw.columns.get_level_values(0)
-            needed = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in raw.columns]
-            df = raw[needed].copy()
-            df.dropna(subset=["Close", "High"], inplace=True)
-            df.sort_index(inplace=True)
-            if not df.empty:
-                return df
-        except Exception:
-            time.sleep(1)
-    return None
-
 def analyze_sector(index_data, df, is_friday):
-    if df is None or len(df) < 500:
-        return None, "Insufficient data (< 500 bars)"
+    # Minimum 1 year of data required (approx 250 bars)
+    if df is None or len(df) < 250:
+        return None, f"Insufficient data (< 250 bars)"
 
     ist_now = datetime.now(tz=IST)
     today = ist_now.date()
@@ -262,10 +254,13 @@ def run_scan():
     failed_fetch_count = 0
 
     for i, idx in enumerate(SECTOR_INDICES, 1):
-        df = fetch_yf(idx["yf"])
+        # Split TradingView symbol (e.g. "NSE:CNXAUTO") into Exchange and Symbol for the TV Feed
+        exchange, symbol = idx["tv"].split(":")
+        
+        df = fetch_tv_data(exchange, symbol)
         if df is None:
             failed_fetch_count += 1
-            print(f"[{i:02d}/{total_indices:02d}] ⚠️ SKIPPED    : {idx['name']:<18} | Yahoo Finance missing/invalid data")
+            print(f"[{i:02d}/{total_indices:02d}] ⚠️ SKIPPED    : {idx['name']:<18} | TradingView Data Fetch Failed")
             continue
 
         res, reason = analyze_sector(idx, df, is_friday)
@@ -276,9 +271,6 @@ def run_scan():
             thrown_out_count += 1
             print(f"[{i:02d}/{total_indices:02d}] ❌ THROWN OUT : {idx['name']:<18} | {reason}")
 
-    # ==========================================================================
-    # AUDIT LOG SUMMARY
-    # ==========================================================================
     successfully_scanned = total_indices - failed_fetch_count
 
     print("\n" + "=" * 80)
