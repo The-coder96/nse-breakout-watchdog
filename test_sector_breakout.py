@@ -1,14 +1,16 @@
 """
-TEST SECTOR BREAKOUT SCANNER (NOTION-STYLE RAW LINK INTEGRATION)
+TEST SECTOR BREAKOUT SCANNER (NATIVE EMBED & DEEP-LINK ARCHITECTURE)
 ==================================================================================
-1. Link Formatting: Exactly mirrors the Notion project's raw string concatenation.
-2. Embeds: Removed Discord API flags that corrupted iOS Universal Links.
-3. Visual Engine: Natively exports pristine charts using the TradingView Camera.
+1. iOS Deep-Linking: Injects the TradingView URL into the native Embed Title, 
+   forcing iPads/iPhones to bypass the internal browser and open the TV app.
+2. Embed Killer: By sending a custom embed, Discord's default web scraper is 
+   disabled, permanently removing the giant ugly TradingView preview cards.
 """
 
 import os
 import time
 import sys
+import json
 import warnings
 import requests
 from datetime import datetime, timedelta, timezone
@@ -63,7 +65,6 @@ def fetch_tv_data(exchange, symbol):
 
 def automate_tv_login(page):
     if not TV_USERNAME or not TV_PASSWORD:
-        print("⚠️ No credentials found in secrets. Proceeding anonymously.")
         return
 
     print("🔑 Attempting live TradingView login via human-emulation...")
@@ -80,27 +81,22 @@ def automate_tv_login(page):
         try:
             page.locator('span:has-text("Email")').first.click(timeout=5000)
             page.wait_for_timeout(2000)
-        except:
-            pass 
+        except: pass 
         
         print("   -> Typing credentials like a human...")
         user_input = page.locator('input[name="id_username"]')
         user_input.click()
         page.wait_for_timeout(400)
         user_input.press_sequentially(TV_USERNAME, delay=120)
-        
         page.wait_for_timeout(800)
         
         pass_input = page.locator('input[name="id_password"]')
         pass_input.click()
         page.wait_for_timeout(400)
         pass_input.press_sequentially(TV_PASSWORD, delay=120)
-        
         page.wait_for_timeout(1000)
-        print("   -> Hitting ENTER to submit form...")
-        pass_input.press("Enter")
         
-        print("⏳ Waiting 12 seconds for authentication & Cloudflare checks to clear...")
+        pass_input.press("Enter")
         page.wait_for_timeout(12000)
         print("✅ Login sequence completed.")
     except Exception as e:
@@ -131,19 +127,14 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
 
     try:
-        print("   -> Utilizing TradingView native camera export...")
         camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
         camera_btn.click(timeout=5000)
         page.wait_for_timeout(1000)
         
         with page.expect_download(timeout=10000) as download_info:
             page.locator('[data-name="save-chart-image"], span:has-text("Download image")').first.click(timeout=5000)
-        
         download_info.value.save_as(screenshot_path)
-        print("   -> Successfully exported pristine chart image.")
-        
-    except Exception as e:
-        print(f"   -> Camera export failed, utilizing aggressive UI-hide fallback... ({e})")
+    except Exception:
         try:
             page.evaluate('''
                 const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
@@ -159,36 +150,61 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
-    formatted_symbol = tv_symbol.replace(":", "%3A")
     
-    # -----------------------------------------------------------------------
-    # NOTION-STYLE RAW LINK (Mirrors the logic from your other project exactly)
-    # -----------------------------------------------------------------------
+    formatted_symbol = tv_symbol.replace(":", "%3A")
     tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+    
+    file_name = os.path.basename(image_path)
 
     if q["type"] == "SQUEEZE":
-        title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
+        embed_title = f"🚨 1-10 YEAR SECTOR SQUEEZE: {q['name']}"
+        embed_color = 16711680 # Red
         body = (
+            f"**TECHNICAL**\n"
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Multi-Year Ceiling: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
             f"• Ceiling Age: {q['age_years']:.2f} Y\n"
             f"• Squeeze Gap: {q['distance_pct']:.2f}%\n"
         )
     else:
-        title = f"🚀 **SECTOR AT ABSOLUTE ALL-TIME HIGH: {q['name']}**"
+        embed_title = f"🚀 SECTOR AT ABSOLUTE ALL-TIME HIGH: {q['name']}"
+        embed_color = 65280 # Green
         body = (
+            f"**TECHNICAL**\n"
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Absolute Max High: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
             f"• Proximity to Max High: {q['distance_pct']:.2f}%\n"
         )
 
-    # Reverted to standard data content string upload, exactly like the Notion script
-    discord_message = f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"
+    # -----------------------------------------------------------------------
+    # NATIVE EMBED ARCHITECTURE
+    # Bypasses iOS internal browser & permanently prevents ugly web previews.
+    # -----------------------------------------------------------------------
+    embed = {
+        "title": embed_title,
+        "url": tv_link,
+        "description": f"{body}\n*Tap this title to open directly in the TradingView app.*",
+        "color": embed_color,
+        "image": {
+            "url": f"attachment://{file_name}"
+        }
+    }
+
+    payload = {
+        "embeds": [embed]
+    }
 
     with open(image_path, "rb") as f:
-        files = {"file": (image_path, f, "image/png")}
+        files = {
+            "file": (file_name, f, "image/png")
+        }
         try: 
-            requests.post(DISCORD_WEBHOOK_URL, data={"content": discord_message}, files=files, timeout=25)
+            requests.post(
+                DISCORD_WEBHOOK_URL, 
+                data={"payload_json": json.dumps(payload)}, 
+                files=files, 
+                timeout=25
+            )
         except Exception as e: 
             print(f"[-] Exception during Discord webhook POST: {e}")
 
@@ -226,8 +242,6 @@ def analyze_sector(index_data, df, is_friday):
 def run_scan():
     ist_now = datetime.now(tz=IST)
     is_friday = True 
-    total_indices = len(SECTOR_INDICES)
-
     qualified = []
     for i, idx in enumerate(SECTOR_INDICES, 1):
         exchange, symbol = idx["tv"].split(":")
@@ -238,30 +252,19 @@ def run_scan():
 
     if qualified:
         print(f"\n[!] Initializing Visual Engine for {len(qualified)} index(es)...")
-        
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True, 
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
-            )
-            # CRITICAL: accept_downloads=True is required to intercept the TradingView camera export
-            context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                accept_downloads=True 
-            )
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"])
+            context = browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", accept_downloads=True)
             page = context.new_page()
             stealth_sync(page)
-            
             automate_tv_login(page)
-
+            
             for q in sorted(qualified, key=lambda x: x["distance_pct"]):
                 try:
                     screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
                     send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
                 except Exception as e:
                     print(f"[-] Failed to deliver chart for {q['name']}: {e}")
-                    
             browser.close()
 
 if __name__ == "__main__":
