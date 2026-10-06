@@ -1,10 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (NATIVE EMBED & DEEP-LINK ARCHITECTURE)
+TEST SECTOR BREAKOUT SCANNER (DUAL-LINK ARCHITECTURE)
 ==================================================================================
-1. iOS Deep-Linking: Injects the TradingView URL into the native Embed Title, 
-   forcing iPads/iPhones to bypass the internal browser and open the TV app.
-2. Embed Killer: By sending a custom embed, Discord's default web scraper is 
-   disabled, permanently removing the giant ugly TradingView preview cards.
+1. Dual-Link System: Provides explicit links for both PC (Web Browser) and Mobile (App).
+2. iOS/Android Deep-Linking: The `tradingview://` custom protocol guarantees that Discord's 
+   internal browser is bypassed on mobile devices, forcing the OS to open the TradingView app.
 """
 
 import os
@@ -152,7 +151,10 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
     
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+    
+    # Generate both standard web URL and the direct mobile app URL scheme
+    tv_web_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+    tv_app_url = f"tradingview://chart?symbol={formatted_symbol}&interval=1W"
     
     file_name = os.path.basename(image_path)
 
@@ -177,13 +179,14 @@ def send_alert_to_discord(tv_symbol, image_path, q):
         )
 
     # -----------------------------------------------------------------------
-    # NATIVE EMBED ARCHITECTURE
-    # Bypasses iOS internal browser & permanently prevents ugly web previews.
+    # DUAL-LINK EMBED ARCHITECTURE
+    # Uses markdown hyperlinking in the description to offer a hard choice.
+    # The tradingview:// scheme is un-trappable by Discord Mobile.
     # -----------------------------------------------------------------------
     embed = {
         "title": embed_title,
-        "url": tv_link,
-        "description": f"{body}\n*Tap this title to open directly in the TradingView app.*",
+        "url": tv_web_url,  # Still keeping the title link for PC convenience
+        "description": f"{body}\n**Interactive Chart:**\n🌐 [Open in Web Browser]({tv_web_url}) | 📱 [Open directly in TV App]({tv_app_url})",
         "color": embed_color,
         "image": {
             "url": f"attachment://{file_name}"
