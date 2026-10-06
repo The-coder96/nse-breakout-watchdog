@@ -1,9 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (PLAYWRIGHT STEALTH ENGINE)
+TEST SECTOR BREAKOUT SCANNER (AUTHENTICATED ENGINE)
 ==================================================================================
-1. Links: Uses RAW URLs wrapped in < > to bypass Discord popups and embeds.
-2. Visual Engine: Scrapes the live TradingView chart.
-3. Bot Bypass: Uses playwright-stealth to mask the headless browser fingerprint.
+1. Links: Forces 1W timeframe directly in the URL (&interval=1W).
+2. Visual Engine: Uses persistent browser session for speed.
+3. Bot Bypass: Uses tf-playwright-stealth + automated UI login via credentials.
 """
 
 import os
@@ -20,13 +20,27 @@ from playwright_stealth import stealth_sync
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 
+# Fetch Secrets
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_SECTOR_WEBHOOK")
+TV_USERNAME = os.environ.get("TV_USERNAME")
+TV_PASSWORD = os.environ.get("TV_PASSWORD")
 
 SECTOR_INDICES = [
     {"name": "NIFTY 50", "tv": "NSE:NIFTY"}, {"name": "BANKNIFTY", "tv": "NSE:BANKNIFTY"},
     {"name": "SENSEX", "tv": "BSE:SENSEX"}, {"name": "CNX500", "tv": "NSE:CNX500"},
     {"name": "CNXMIDCAP", "tv": "NSE:CNXMIDCAP"}, {"name": "CNXSMLLCAP", "tv": "NSE:CNXSMALLCAP"},
-    {"name": "CNXIT", "tv": "NSE:CNXIT"}
+    {"name": "CNXIT", "tv": "NSE:CNXIT"}, {"name": "CNXAUTO", "tv": "NSE:CNXAUTO"},
+    {"name": "CNXFMCG", "tv": "NSE:CNXFMCG"}, {"name": "CNXPHARMA", "tv": "NSE:CNXPHARMA"},
+    {"name": "CNXMETAL", "tv": "NSE:CNXMETAL"}, {"name": "CNXREALTY", "tv": "NSE:CNXREALTY"},
+    {"name": "CNXENERGY", "tv": "NSE:CNXENERGY"}, {"name": "CNXINFRA", "tv": "NSE:CNXINFRA"},
+    {"name": "CNXMEDIA", "tv": "NSE:CNXMEDIA"}, {"name": "CNXFINANCE", "tv": "NSE:CNXFINANCE"},
+    {"name": "CNXPSE", "tv": "NSE:CNXPSE"}, {"name": "CNXPSUBANK", "tv": "NSE:CNXPSUBANK"},
+    {"name": "NIFTYPVTBANK", "tv": "NSE:NIFTYPVTBANK"}, {"name": "CNXCONSUMPTION", "tv": "NSE:CNXCONSUMPTION"},
+    {"name": "CNXCOMMODITIES", "tv": "NSE:CNXCOMMODITIES"}, {"name": "CNXSERVICE", "tv": "NSE:CNXSERVICE"},
+    {"name": "NIFTY_HEALTHCARE", "tv": "NSE:NIFTY_HEALTHCARE"}, {"name": "NIFTY_IND_TOURISM", "tv": "NSE:NIFTY_IND_TOURISM"},
+    {"name": "NIFTY_IND_DEFENCE", "tv": "NSE:NIFTY_IND_DEFENCE"}, {"name": "NIFTY_OIL_AND_GAS", "tv": "NSE:NIFTY_OIL_AND_GAS"},
+    {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL"}, {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV"},
+    {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL"}
 ]
 
 try:
@@ -47,71 +61,86 @@ def fetch_tv_data(exchange, symbol):
             time.sleep(1)
     return None
 
-def capture_breakout_chart(tv_symbol, timeframe="1W"):
-    print(f"📸 Generating stealth weekly chart snapshot for {tv_symbol}...")
+def automate_tv_login(page):
+    if not TV_USERNAME or not TV_PASSWORD:
+        print("⚠️ No TV_USERNAME or TV_PASSWORD found in secrets. Proceeding anonymously.")
+        return
+
+    print("🔑 Attempting live TradingView login via credentials...")
+    try:
+        page.goto("https://www.tradingview.com/", timeout=60000)
+        page.wait_for_timeout(3000)
+        
+        # Click User icon
+        page.locator('.tv-header__user-menu-button--anonymous').click(timeout=5000)
+        # Click Sign in
+        page.locator('button[data-name="header-user-menu-sign-in"]').click(timeout=5000)
+        page.wait_for_timeout(2000)
+        
+        # Select Email 
+        page.locator('span:has-text("Email")').first.click(timeout=5000)
+        page.wait_for_timeout(1000)
+        
+        # Fill out form
+        page.fill('input[name="id_username"]', TV_USERNAME)
+        page.fill('input[name="id_password"]', TV_PASSWORD)
+        
+        # Submit
+        page.locator('button[type="submit"]').first.click(timeout=5000)
+        
+        print("⏳ Waiting 8 seconds for authentication to process...")
+        page.wait_for_timeout(8000)
+        print("✅ Login sequence completed.")
+    except Exception as e:
+        print(f"⚠️ Login sequence failed (Cloudflare CAPTCHA may be blocking the bot): {e}")
+
+def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
+    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
-    with sync_playwright() as p:
-        # Launching with standard Chrome arguments to look normal
-        browser = p.chromium.launch(
-            headless=True, 
-            args=[
-                "--no-sandbox", 
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
-        context = browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        page = context.new_page()
-        
-        # INJECT STEALTH TO BYPASS CLOUDFLARE/BOT DETECTION
-        stealth_sync(page)
-        
-        page.goto(url, timeout=60000)
-        page.wait_for_timeout(6000) # Give extra time to bypass Cloudflare checks
+    page.goto(url, timeout=60000)
+    page.wait_for_timeout(5000)
 
-        for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-            try: page.locator(selector).click(timeout=1500)
-            except: pass
-
-        try:
-            page.get_by_text("5Y", exact=True).click(timeout=3000)
-            page.wait_for_timeout(1000)
-            page.keyboard.type("1W", delay=100)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(3000) 
-            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
-        except:
-            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-
-        try:
-            page.evaluate('''
-                const hide = (selector) => { const el = document.querySelector(selector); if (el) el.style.display = 'none'; };
-                hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
-                hide('[class*="layout__area--right"]'); hide('[class*="layout__area--bottom"]');
-                hide('[data-name="bottom-widget-bar"]');
-                hide('#overlap-manager-root'); 
-            ''')
-            page.wait_for_timeout(1000)
+    for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
+        try: page.locator(selector).click(timeout=1500)
         except: pass
 
-        page.screenshot(path=screenshot_path)
-        browser.close()
-        return screenshot_path
+    try:
+        page.get_by_text("5Y", exact=True).click(timeout=3000)
+        page.wait_for_timeout(1000)
+        page.keyboard.type("1W", delay=100)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(3000) 
+        for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+        for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
+    except:
+        for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+
+    try:
+        page.evaluate('''
+            const hide = (selector) => { const el = document.querySelector(selector); if (el) el.style.display = 'none'; };
+            hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
+            hide('[class*="layout__area--right"]'); hide('[class*="layout__area--bottom"]');
+            hide('[data-name="bottom-widget-bar"]');
+            hide('#overlap-manager-root'); 
+        ''')
+        page.wait_for_timeout(1000)
+    except: pass
+
+    page.screenshot(path=screenshot_path)
+    return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
 
     formatted_symbol = tv_symbol.replace(":", "%3A")
     
-    # RAW URL formatted to prevent Embed card, while avoiding "Leaving Discord" warning
-    tv_link = f"<https://in.tradingview.com/chart/?symbol={formatted_symbol}>"
+    # -----------------------------------------------------------------------
+    # LINK FIX: Force 1W interval directly in the URL 
+    # -----------------------------------------------------------------------
+    tv_link = f"<https://in.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
@@ -190,12 +219,31 @@ def run_scan():
         if res: qualified.append(res)
 
     if qualified:
-        for q in sorted(qualified, key=lambda x: x["distance_pct"]):
-            try:
-                screenshot_path = capture_breakout_chart(q['tv_symbol'], timeframe="1W")
-                send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
-            except Exception as e:
-                print(f"[-] Failed to deliver chart for {q['name']}: {e}")
+        print(f"\n[!] Initializing Visual Engine for {len(qualified)} index(es)...")
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True, 
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+            )
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
+            stealth_sync(page)
+            
+            # Authenticate once before looping through charts
+            automate_tv_login(page)
+
+            for q in sorted(qualified, key=lambda x: x["distance_pct"]):
+                try:
+                    screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
+                    send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
+                except Exception as e:
+                    print(f"[-] Failed to deliver chart for {q['name']}: {e}")
+                    
+            browser.close()
 
 if __name__ == "__main__":
     run_scan()
