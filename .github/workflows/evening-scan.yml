@@ -21,6 +21,7 @@ jobs:
       - name: Install Python Dependencies
         run: |
           pip install yfinance requests pandas tradingview-screener playwright
+          pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Install Playwright Chromium Browser
@@ -30,6 +31,7 @@ jobs:
       - name: Run Evening Scanner
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_SECTOR_WEBHOOK: ${{ secrets.DISCORD_SECTOR_WEBHOOK }}
         run: python test.py
 
       - name: Commit and Push Watchlist
