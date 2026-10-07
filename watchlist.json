@@ -14,8 +14,8 @@
         "tv_symbol": "NSE:CNXSMALLCAP",
         "yf_symbol": null,
         "target": 20187.8,
-        "current_price": 19563.9,
-        "distance_pct": 3.09,
+        "current_price": 19568.8,
+        "distance_pct": 3.07,
         "lh_date": "04-Sep-2026",
         "item_type": "SECTOR"
     },
@@ -24,8 +24,8 @@
         "tv_symbol": "NSE:CNXPHARMA",
         "yf_symbol": null,
         "target": 27255.05,
-        "current_price": 26493.45,
-        "distance_pct": 2.79,
+        "current_price": 26456.0,
+        "distance_pct": 2.93,
         "lh_date": "24-Sep-2026",
         "item_type": "SECTOR"
     }
