@@ -1,7 +1,7 @@
 """
 UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 ==================================================================================
-1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, +Net Income, >10Cr Rev).
+1. Stocks: Multi-Year Breakout (2Y+ Age, <= 7% Gap, +Net Income, >10Cr Rev).
 2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays) (<= 5% Gap).
 3. Data Engines: yfinance for Stocks, tvDatafeed for Sectors.
 4. Routing: Automatically splits alerts to separate Discord channels.
@@ -149,27 +149,56 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         pass
 
     # -----------------------------------------------------------------------
-    # NATIVE EXPORT: Clicks chart to focus, then uses Ctrl+Alt+S
+    # DUAL-NATIVE EXPORT ENGINE
     # -----------------------------------------------------------------------
+    page.mouse.click(960, 540) # Ensure chart canvas has focus
+    page.wait_for_timeout(1000)
+    
+    native_success = False
+
+    # ATTEMPT 1: Explicitly hold modifiers to force Linux to recognize Ctrl+Alt+S
     try:
-        page.wait_for_timeout(1500)
-        page.mouse.click(960, 540) # Focus chart canvas
-        page.wait_for_timeout(500)
-        
-        with page.expect_download(timeout=8000) as download_info:
-            page.keyboard.press("Control+Alt+s")
+        print("   -> Attempt 1: Triggering Ctrl+Alt+S shortcut...")
+        with page.expect_download(timeout=6000) as download_info:
+            page.keyboard.down("Control")
+            page.keyboard.down("Alt")
+            page.keyboard.press("s")
+            page.keyboard.up("Alt")
+            page.keyboard.up("Control")
             
         download_info.value.save_as(screenshot_path)
+        print("   -> Success: Native chart downloaded via shortcut.")
+        native_success = True
     except Exception as e:
-        print(f"   -> Shortcut failed, taking fallback screenshot: {e}")
+        print(f"   -> Shortcut timeout on Linux server: {e}")
+
+    # ATTEMPT 2: Native Camera Icon (Waits for animation before clicking)
+    if not native_success:
+        try:
+            print("   -> Attempt 2: Clicking native Camera icon...")
+            camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
+            camera_btn.click(timeout=5000)
+            
+            page.wait_for_selector('[data-name="save-chart-image"]', state="visible", timeout=3000)
+            
+            with page.expect_download(timeout=6000) as download_info:
+                page.locator('[data-name="save-chart-image"]').click()
+                
+            download_info.value.save_as(screenshot_path)
+            print("   -> Success: Native chart downloaded via Camera menu.")
+            native_success = True
+        except Exception as e:
+            print(f"   -> Camera menu failed: {e}")
+
+    # ATTEMPT 3: Absolute Fallback (Strips right sidebar manually before screenshot)
+    if not native_success:
+        print("   -> Both native engines failed. Forcing clean fallback screenshot...")
         try:
             page.evaluate('''
-                const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
-                hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
-                hide('[class*="layout__area--right"]'); hide('.widgetbar-wrap');
-                hide('[class*="layout__area--bottom"]'); hide('#overlap-manager-root');
+                const rightArea = document.querySelector('[class*="layout__area--right"]');
+                if (rightArea) rightArea.style.display = 'none';
             ''')
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(500)
         except: pass
         page.screenshot(path=screenshot_path)
 
@@ -265,8 +294,10 @@ def analyze_stock(c, df):
     age_years = (ist_now.date() - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # Strict 5.00% Limit for Stocks
-    if age_years < 2.0 or not (0.00 <= distance_pct <= 5.00): return None
+    # -----------------------------------------------------------------------
+    # Updated: Strict 7.00% Limit for Stocks 
+    # -----------------------------------------------------------------------
+    if age_years < 2.0 or not (0.00 <= distance_pct <= 7.00): return None
     if (df.loc[lh_idx:]["Close"] > lifetime_high).any(): return None
 
     return {
