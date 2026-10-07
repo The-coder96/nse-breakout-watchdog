@@ -1,15 +1,14 @@
 """
-TEST SECTOR BREAKOUT SCANNER (DUAL-LINK ARCHITECTURE)
+TEST SECTOR BREAKOUT SCANNER (STANDARD TEXT FORMAT)
 ==================================================================================
-1. Dual-Link System: Provides explicit links for both PC (Web Browser) and Mobile (App).
-2. iOS/Android Deep-Linking: The `tradingview://` custom protocol guarantees that Discord's 
-   internal browser is bypassed on mobile devices, forcing the OS to open the TradingView app.
+1. Layout: Reverted to the classic text message layout (No custom embeds).
+2. Links: Uses raw www.tradingview.com URL for native iOS/iPadOS app routing.
+3. Visuals: Uses the TradingView native Camera button for pristine charts.
 """
 
 import os
 import time
 import sys
-import json
 import warnings
 import requests
 from datetime import datetime, timedelta, timezone
@@ -151,63 +150,30 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
     
     formatted_symbol = tv_symbol.replace(":", "%3A")
+    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
     
-    # Generate both standard web URL and the direct mobile app URL scheme
-    tv_web_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
-    tv_app_url = f"tradingview://chart?symbol={formatted_symbol}&interval=1W"
-    
-    file_name = os.path.basename(image_path)
-
     if q["type"] == "SQUEEZE":
-        embed_title = f"🚨 1-10 YEAR SECTOR SQUEEZE: {q['name']}"
-        embed_color = 16711680 # Red
+        title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
         body = (
-            f"**TECHNICAL**\n"
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Multi-Year Ceiling: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
             f"• Ceiling Age: {q['age_years']:.2f} Y\n"
             f"• Squeeze Gap: {q['distance_pct']:.2f}%\n"
         )
     else:
-        embed_title = f"🚀 SECTOR AT ABSOLUTE ALL-TIME HIGH: {q['name']}"
-        embed_color = 65280 # Green
+        title = f"🚀 **SECTOR AT ABSOLUTE ALL-TIME HIGH: {q['name']}**"
         body = (
-            f"**TECHNICAL**\n"
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Absolute Max High: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
             f"• Proximity to Max High: {q['distance_pct']:.2f}%\n"
         )
 
-    # -----------------------------------------------------------------------
-    # DUAL-LINK EMBED ARCHITECTURE
-    # Uses markdown hyperlinking in the description to offer a hard choice.
-    # The tradingview:// scheme is un-trappable by Discord Mobile.
-    # -----------------------------------------------------------------------
-    embed = {
-        "title": embed_title,
-        "url": tv_web_url,  # Still keeping the title link for PC convenience
-        "description": f"{body}\n**Interactive Chart:**\n🌐 [Open in Web Browser]({tv_web_url}) | 📱 [Open directly in TV App]({tv_app_url})",
-        "color": embed_color,
-        "image": {
-            "url": f"attachment://{file_name}"
-        }
-    }
-
-    payload = {
-        "embeds": [embed]
-    }
+    discord_message = f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"
 
     with open(image_path, "rb") as f:
-        files = {
-            "file": (file_name, f, "image/png")
-        }
+        files = {"file": (os.path.basename(image_path), f, "image/png")}
         try: 
-            requests.post(
-                DISCORD_WEBHOOK_URL, 
-                data={"payload_json": json.dumps(payload)}, 
-                files=files, 
-                timeout=25
-            )
+            requests.post(DISCORD_WEBHOOK_URL, data={"content": discord_message}, files=files, timeout=25)
         except Exception as e: 
             print(f"[-] Exception during Discord webhook POST: {e}")
 
