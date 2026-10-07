@@ -1,9 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (KEYBOARD SHORTCUT EXPORT)
+TEST SECTOR BREAKOUT SCANNER (BULLETPROOF NATIVE EXPORT)
 ==================================================================================
-1. Native Export: Uses Ctrl + Alt + S to force native TradingView chart downloads.
-2. Embeds: URL wrapped in < > to permanently kill the ugly black preview card.
-3. Deep-Links: iOS-compatible raw URL for flawless deep-linking.
+1. Native Shortcut: Uses explicit KeyDown/KeyUp commands to force Linux to recognize Ctrl+Alt+S.
+2. Native Camera Backup: Waits for the dropdown menu animation before clicking download.
+3. Embeds: URL wrapped in < > to permanently kill the ugly black preview card.
 """
 
 import os
@@ -125,21 +125,58 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         pass
 
     # -----------------------------------------------------------------------
-    # NATIVE EXPORT: Uses Ctrl+Alt+S to bypass UI clicks and get a clean chart
+    # DUAL-NATIVE EXPORT ENGINE
     # -----------------------------------------------------------------------
+    page.mouse.click(960, 540) # Ensure chart canvas has focus
+    page.wait_for_timeout(1000)
+    
+    native_success = False
+
+    # ATTEMPT 1: Explicitly hold modifiers to force Linux to recognize Ctrl+Alt+S
     try:
-        print("   -> Triggering native export via Ctrl+Alt+S shortcut...")
-        page.wait_for_timeout(2000) # Ensure chart is fully loaded before snap
-        
-        # Intercept the exact moment TradingView creates the download file
-        with page.expect_download(timeout=15000) as download_info:
-            page.keyboard.press("Control+Alt+s")
+        print("   -> Attempt 1: Triggering Ctrl+Alt+S shortcut...")
+        with page.expect_download(timeout=6000) as download_info:
+            page.keyboard.down("Control")
+            page.keyboard.down("Alt")
+            page.keyboard.press("s")
+            page.keyboard.up("Alt")
+            page.keyboard.up("Control")
             
         download_info.value.save_as(screenshot_path)
-        print("   -> Successfully downloaded pristine native chart.")
-        
+        print("   -> Success: Native chart downloaded via shortcut.")
+        native_success = True
     except Exception as e:
-        print(f"   -> Shortcut failed, falling back to standard screenshot: {e}")
+        print(f"   -> Shortcut timeout on Linux server: {e}")
+
+    # ATTEMPT 2: Native Camera Icon (Waits for animation before clicking)
+    if not native_success:
+        try:
+            print("   -> Attempt 2: Clicking native Camera icon...")
+            camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
+            camera_btn.click(timeout=5000)
+            
+            # Wait for dropdown menu to be visible before clicking download
+            page.wait_for_selector('[data-name="save-chart-image"]', state="visible", timeout=3000)
+            
+            with page.expect_download(timeout=6000) as download_info:
+                page.locator('[data-name="save-chart-image"]').click()
+                
+            download_info.value.save_as(screenshot_path)
+            print("   -> Success: Native chart downloaded via Camera menu.")
+            native_success = True
+        except Exception as e:
+            print(f"   -> Camera menu failed: {e}")
+
+    # ATTEMPT 3: Absolute Fallback (Strips right sidebar manually before screenshot)
+    if not native_success:
+        print("   -> Both native engines failed. Forcing clean fallback screenshot...")
+        try:
+            page.evaluate('''
+                const rightArea = document.querySelector('[class*="layout__area--right"]');
+                if (rightArea) rightArea.style.display = 'none';
+            ''')
+            page.wait_for_timeout(500)
+        except: pass
         page.screenshot(path=screenshot_path)
 
     return screenshot_path
@@ -148,7 +185,7 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
     formatted_symbol = tv_symbol.replace(":", "%3A")
     
-    # Wrapped in < > blocks the black preview card
+    # Wrapped in < > to block the black preview card
     tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
     if q["type"] == "SQUEEZE":
