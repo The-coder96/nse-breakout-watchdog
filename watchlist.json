@@ -4,8 +4,8 @@
         "tv_symbol": "NSE:LALPATHLAB",
         "yf_symbol": "LALPATHLAB.NS",
         "target": 2045.0,
-        "current_price": 1971.3,
-        "distance_pct": 3.6,
+        "current_price": 1945.1,
+        "distance_pct": 4.89,
         "lh_date": "15-Sep-2021",
         "item_type": "STOCK"
     },
@@ -14,8 +14,8 @@
         "tv_symbol": "NSE:CNXSMALLCAP",
         "yf_symbol": null,
         "target": 20187.8,
-        "current_price": 19568.8,
-        "distance_pct": 3.07,
+        "current_price": 19506.95,
+        "distance_pct": 3.37,
         "lh_date": "04-Sep-2026",
         "item_type": "SECTOR"
     },
@@ -24,8 +24,8 @@
         "tv_symbol": "NSE:CNXPHARMA",
         "yf_symbol": null,
         "target": 27255.05,
-        "current_price": 26456.0,
-        "distance_pct": 2.93,
+        "current_price": 26436.55,
+        "distance_pct": 3.0,
         "lh_date": "24-Sep-2026",
         "item_type": "SECTOR"
     }
