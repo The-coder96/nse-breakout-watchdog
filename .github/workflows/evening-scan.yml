@@ -20,7 +20,7 @@ jobs:
 
       - name: Install Python Dependencies
         run: |
-          pip install yfinance requests pandas tradingview-screener playwright playwright-stealth
+          pip install yfinance requests pandas tradingview-screener playwright tf-playwright-stealth
           pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
