@@ -3,7 +3,7 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 ==================================================================================
 1. Stocks: Multi-Year Breakout (2Y+ Age, <= 7% Gap, +Net Income, >10Cr Rev).
 2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays) (<= 5% Gap).
-3. Data Engines: yfinance for Stocks, tvDatafeed for Sectors.
+3. Data Engines: yf.Ticker().history() for Stocks (Bug Fix), tvDatafeed for Sectors.
 4. Routing: Automatically splits alerts to separate Discord channels.
 5. Visuals: Human-emulated login + Ctrl+Alt+S Native Chart Exports + iOS Links.
 """
@@ -60,9 +60,6 @@ except Exception as e:
     print(f"[-] Failed to initialize TradingView feed: {e}")
     tv = None
 
-# ==============================================================================
-# WATCHLIST PERSISTENCE
-# ==============================================================================
 def save_watchlist(qualified_items):
     watchlist = []
     for q in qualified_items:
@@ -82,9 +79,6 @@ def save_watchlist(qualified_items):
         json.dump(watchlist, f, indent=4)
     print(f"\n[+] Saved {len(watchlist)} candidate(s) to watchlist.json for watchdog.")
 
-# ==============================================================================
-# VISUAL & DISCORD ENGINE
-# ==============================================================================
 def automate_tv_login(page):
     if not TV_USERNAME or not TV_PASSWORD:
         return
@@ -105,7 +99,6 @@ def automate_tv_login(page):
             page.wait_for_timeout(2000)
         except: pass 
         
-        print("   -> Typing credentials like a human...")
         user_input = page.locator('input[name="id_username"]')
         user_input.click()
         page.wait_for_timeout(400)
@@ -148,17 +141,11 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     except:
         pass
 
-    # -----------------------------------------------------------------------
-    # DUAL-NATIVE EXPORT ENGINE
-    # -----------------------------------------------------------------------
     page.mouse.click(960, 540) # Ensure chart canvas has focus
     page.wait_for_timeout(1000)
-    
     native_success = False
 
-    # ATTEMPT 1: Explicitly hold modifiers to force Linux to recognize Ctrl+Alt+S
     try:
-        print("   -> Attempt 1: Triggering Ctrl+Alt+S shortcut...")
         with page.expect_download(timeout=6000) as download_info:
             page.keyboard.down("Control")
             page.keyboard.down("Alt")
@@ -167,32 +154,25 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
             page.keyboard.up("Control")
             
         download_info.value.save_as(screenshot_path)
-        print("   -> Success: Native chart downloaded via shortcut.")
         native_success = True
-    except Exception as e:
-        print(f"   -> Shortcut timeout on Linux server: {e}")
+    except Exception:
+        pass
 
-    # ATTEMPT 2: Native Camera Icon (Waits for animation before clicking)
     if not native_success:
         try:
-            print("   -> Attempt 2: Clicking native Camera icon...")
             camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
             camera_btn.click(timeout=5000)
-            
             page.wait_for_selector('[data-name="save-chart-image"]', state="visible", timeout=3000)
             
             with page.expect_download(timeout=6000) as download_info:
                 page.locator('[data-name="save-chart-image"]').click()
                 
             download_info.value.save_as(screenshot_path)
-            print("   -> Success: Native chart downloaded via Camera menu.")
             native_success = True
-        except Exception as e:
-            print(f"   -> Camera menu failed: {e}")
+        except Exception:
+            pass
 
-    # ATTEMPT 3: Absolute Fallback (Strips right sidebar manually before screenshot)
     if not native_success:
-        print("   -> Both native engines failed. Forcing clean fallback screenshot...")
         try:
             page.evaluate('''
                 const rightArea = document.querySelector('[class*="layout__area--right"]');
@@ -206,10 +186,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     target_webhook = DISCORD_STOCK_WEBHOOK if q["item_type"] == "STOCK" else DISCORD_SECTOR_WEBHOOK
-    
-    if not target_webhook:
-        print(f"[-] Error: Webhook secret missing for {q['item_type']}")
-        return
+    if not target_webhook: return
 
     formatted_symbol = tv_symbol.replace(":", "%3A")
     tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
@@ -246,16 +223,10 @@ def send_alert_to_discord(tv_symbol, image_path, q):
         
         try:
             requests.post(target_webhook, data=payload, files=files, timeout=25)
-            print(f"[+] Successfully delivered {tv_symbol} payload to Discord.")
-        except Exception as e:
-            print(f"[-] Exception during Discord webhook POST: {e}")
+        except Exception: pass
 
-    if os.path.exists(image_path):
-        os.remove(image_path)
+    if os.path.exists(image_path): os.remove(image_path)
 
-# ==============================================================================
-# SCANNER LOGIC
-# ==============================================================================
 def tv_to_yf(tv_symbol):
     return f"{tv_symbol.split(':')[-1].strip().replace('_', '-')}.NS"
 
@@ -294,9 +265,6 @@ def analyze_stock(c, df):
     age_years = (ist_now.date() - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # -----------------------------------------------------------------------
-    # Updated: Strict 7.00% Limit for Stocks 
-    # -----------------------------------------------------------------------
     if age_years < 2.0 or not (0.00 <= distance_pct <= 7.00): return None
     if (df.loc[lh_idx:]["Close"] > lifetime_high).any(): return None
 
@@ -318,7 +286,6 @@ def analyze_sector(idx, df, is_friday):
     age_years = (today - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # Strict 5.00% Limit for Sectors
     if not (0.00 <= distance_pct <= 5.00): return None
 
     is_multi_year = (1.0 <= age_years <= 10.0) and not (df.loc[lh_idx:]["Close"] > lifetime_high).any()
@@ -334,9 +301,6 @@ def analyze_sector(idx, df, is_friday):
         "item_type": "SECTOR", "alert_type": alert_type
     }
 
-# ==============================================================================
-# MAIN EXECUTION PIPELINE
-# ==============================================================================
 def run_scan():
     all_qualified = []
     
@@ -344,15 +308,18 @@ def run_scan():
     stock_cands = fetch_tv_candidates(500)
     for c in stock_cands:
         try:
-            df = yf.download(tv_to_yf(c["tv_symbol"]), period="max", auto_adjust=True, progress=False, timeout=5)
+            # BUG FIX: Swapped yf.download for yf.Ticker().history() to bypass MultiIndex crash
+            ticker = yf.Ticker(tv_to_yf(c["tv_symbol"]))
+            df = ticker.history(period="max")
             if df is not None and not df.empty:
                 res = analyze_stock(c, df)
                 if res: all_qualified.append(res)
-        except: pass
+        except Exception as e: 
+            print(f"[-] Data error for {c['symbol']}: {e}")
     
     print("\n[Pass 2] Scanning 29 Sector & Thematic Indices via TradingView...")
     if tv:
-        is_friday = (datetime.now(tz=IST).weekday() == 4)
+        is_friday = True # FORCED TRUE FOR TESTING
         for idx in SECTOR_INDICES:
             exchange, symbol = idx["tv"].split(":")
             try:
@@ -378,7 +345,6 @@ def run_scan():
             page = context.new_page()
             stealth_sync(page)
             
-            # Login once, use session for all charts
             automate_tv_login(page)
 
             for q in sorted(all_qualified, key=lambda x: x["distance_pct"]):
