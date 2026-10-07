@@ -1,9 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (PURE NATIVE CAMERA FIX)
+TEST SECTOR BREAKOUT SCANNER (KEYBOARD SHORTCUT EXPORT)
 ==================================================================================
-1. Native Export: Zero UI-hiding hacks. Strictly relies on the native Camera icon.
+1. Native Export: Uses Ctrl + Alt + S to force native TradingView chart downloads.
 2. Embeds: URL wrapped in < > to permanently kill the ugly black preview card.
-3. Links: iOS-compatible raw URL for flawless deep-linking.
+3. Deep-Links: iOS-compatible raw URL for flawless deep-linking.
 """
 
 import os
@@ -125,18 +125,21 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         pass
 
     # -----------------------------------------------------------------------
-    # PURE NATIVE EXPORT (No UI hiding hacks)
+    # NATIVE EXPORT: Uses Ctrl+Alt+S to bypass UI clicks and get a clean chart
     # -----------------------------------------------------------------------
     try:
-        camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
-        camera_btn.click(timeout=5000)
-        page.wait_for_timeout(1000)
+        print("   -> Triggering native export via Ctrl+Alt+S shortcut...")
+        page.wait_for_timeout(2000) # Ensure chart is fully loaded before snap
         
-        with page.expect_download(timeout=10000) as download_info:
-            page.locator('[data-name="save-chart-image"], span:has-text("Download image")').first.click(timeout=5000)
+        # Intercept the exact moment TradingView creates the download file
+        with page.expect_download(timeout=15000) as download_info:
+            page.keyboard.press("Control+Alt+s")
+            
         download_info.value.save_as(screenshot_path)
+        print("   -> Successfully downloaded pristine native chart.")
+        
     except Exception as e:
-        print(f"   -> Camera button failed, falling back to standard screenshot: {e}")
+        print(f"   -> Shortcut failed, falling back to standard screenshot: {e}")
         page.screenshot(path=screenshot_path)
 
     return screenshot_path
