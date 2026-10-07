@@ -1,9 +1,9 @@
 """
-TEST SECTOR BREAKOUT SCANNER (STANDARD TEXT FORMAT)
+TEST SECTOR BREAKOUT SCANNER (FINAL CLEAN TEXT & EDGE-TO-EDGE CHARTS)
 ==================================================================================
-1. Layout: Reverted to the classic text message layout (No custom embeds).
-2. Links: Uses raw www.tradingview.com URL for native iOS/iPadOS app routing.
-3. Visuals: Uses the TradingView native Camera button for pristine charts.
+1. Embeds: URL wrapped in < > to permanently kill the ugly black preview card.
+2. Visuals: Forcibly closes the Watchlist panel and resizes the canvas for clean charts.
+3. Export: Uses native camera button for watermarked, high-quality images.
 """
 
 import os
@@ -124,6 +124,20 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     except:
         for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
 
+    # -----------------------------------------------------------------------
+    # VISUAL FIX: Physically remove Watchlist sidebar & force canvas to expand
+    # -----------------------------------------------------------------------
+    try:
+        page.evaluate('''
+            const rightArea = document.querySelector('[class*="layout__area--right"]');
+            if (rightArea) rightArea.style.display = 'none';
+            const widgetBar = document.querySelector('.widgetbar-wrap');
+            if (widgetBar) widgetBar.style.display = 'none';
+            window.dispatchEvent(new Event('resize'));
+        ''')
+        page.wait_for_timeout(1500) # Wait 1.5s for the chart to redraw edge-to-edge
+    except: pass
+
     try:
         camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
         camera_btn.click(timeout=5000)
@@ -137,7 +151,6 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
             page.evaluate('''
                 const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
                 hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
-                hide('[class*="layout__area--right"]'); hide('.widgetbar-wrap');
                 hide('[class*="layout__area--bottom"]'); hide('#overlap-manager-root');
             ''')
             page.wait_for_timeout(1000)
@@ -148,10 +161,13 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
 
 def send_alert_to_discord(tv_symbol, image_path, q):
     if not DISCORD_WEBHOOK_URL: return
-    
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
     
+    # -----------------------------------------------------------------------
+    # EMBED FIX: URL wrapped in < > to suppress the black preview card
+    # -----------------------------------------------------------------------
+    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
+
     if q["type"] == "SQUEEZE":
         title = f"🚨 **1-10 YEAR SECTOR SQUEEZE DETECTED: {q['name']}**"
         body = (
