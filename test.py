@@ -5,6 +5,7 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays) (<= 5% Gap).
 3. Data Engines: yfinance for Stocks, tvDatafeed for Sectors.
 4. Routing: Automatically splits alerts to separate Discord channels.
+5. Visuals: Human-emulated login + Ctrl+Alt+S Native Chart Exports + iOS Links.
 """
 
 import os
@@ -19,15 +20,18 @@ import yfinance as yf
 from tradingview_screener import Query, col
 from tvDatafeed import TvDatafeed, Interval
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 
 # ==============================================================================
-# SECURE DISCORD WEBHOOK CONFIGURATION (SPLIT ROUTING)
+# SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
 # ==============================================================================
 DISCORD_STOCK_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
 DISCORD_SECTOR_WEBHOOK = os.environ.get("DISCORD_SECTOR_WEBHOOK")
+TV_USERNAME = os.environ.get("TV_USERNAME")
+TV_PASSWORD = os.environ.get("TV_PASSWORD")
 
 # ==============================================================================
 # SECTOR UNIVERSE (29 INDICES)
@@ -81,70 +85,105 @@ def save_watchlist(qualified_items):
 # ==============================================================================
 # VISUAL & DISCORD ENGINE
 # ==============================================================================
-def capture_breakout_chart(tv_symbol, timeframe="1W"):
+def automate_tv_login(page):
+    if not TV_USERNAME or not TV_PASSWORD:
+        return
+
+    print("🔑 Attempting live TradingView login via human-emulation...")
+    try:
+        page.goto("https://www.tradingview.com/", timeout=60000)
+        page.wait_for_timeout(4000)
+        
+        page.locator('.tv-header__user-menu-button--anonymous').click(timeout=10000)
+        page.wait_for_timeout(1500)
+        
+        page.locator('button[data-name="header-user-menu-sign-in"]').click(timeout=10000)
+        page.wait_for_timeout(3000)
+        
+        try:
+            page.locator('span:has-text("Email")').first.click(timeout=5000)
+            page.wait_for_timeout(2000)
+        except: pass 
+        
+        print("   -> Typing credentials like a human...")
+        user_input = page.locator('input[name="id_username"]')
+        user_input.click()
+        page.wait_for_timeout(400)
+        user_input.press_sequentially(TV_USERNAME, delay=120)
+        page.wait_for_timeout(800)
+        
+        pass_input = page.locator('input[name="id_password"]')
+        pass_input.click()
+        page.wait_for_timeout(400)
+        pass_input.press_sequentially(TV_PASSWORD, delay=120)
+        page.wait_for_timeout(1000)
+        
+        pass_input.press("Enter")
+        page.wait_for_timeout(12000)
+        print("✅ Login sequence completed.")
+    except Exception as e:
+        print(f"⚠️ Login sequence failed: {e}")
+
+def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        context = browser.new_context(viewport={"width": 1920, "height": 1080}, accept_downloads=True)
-        page = context.new_page()
+    page.goto(url, timeout=60000)
+    page.wait_for_timeout(6000)
 
-        page.goto(url, timeout=60000)
-        page.wait_for_timeout(5000)
+    for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
+        try: page.locator(selector).click(timeout=1500)
+        except: pass
 
-        for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-            try: page.locator(selector).click(timeout=1500)
-            except: pass
+    try:
+        page.get_by_text("5Y", exact=True).click(timeout=3000)
+        page.wait_for_timeout(1000)
+        page.keyboard.type("1W", delay=100)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(3000) 
+        for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
+        for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
+    except:
+        pass
 
-        try:
-            page.get_by_text("5Y", exact=True).click(timeout=3000)
-            page.wait_for_timeout(1000)
-            page.keyboard.type("1W", delay=100)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(2000)
-            for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-            for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
-        except:
-            for _ in range(6): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-
+    # -----------------------------------------------------------------------
+    # NATIVE EXPORT: Clicks chart to focus, then uses Ctrl+Alt+S
+    # -----------------------------------------------------------------------
+    try:
+        page.wait_for_timeout(1500)
+        page.mouse.click(960, 540) # Focus chart canvas
+        page.wait_for_timeout(500)
+        
+        with page.expect_download(timeout=8000) as download_info:
+            page.keyboard.press("Control+Alt+s")
+            
+        download_info.value.save_as(screenshot_path)
+    except Exception as e:
+        print(f"   -> Shortcut failed, taking fallback screenshot: {e}")
         try:
             page.evaluate('''
-                const hide = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; };
+                const hide = (sel) => { document.querySelectorAll(sel).forEach(el => el.style.display = 'none'); };
                 hide('[class*="layout__area--left"]'); hide('[class*="layout__area--top"]');
-                hide('[class*="layout__area--right"]'); hide('[class*="layout__area--bottom"]');
-                hide('[data-name="bottom-widget-bar"]');
+                hide('[class*="layout__area--right"]'); hide('.widgetbar-wrap');
+                hide('[class*="layout__area--bottom"]'); hide('#overlap-manager-root');
             ''')
             page.wait_for_timeout(1000)
         except: pass
+        page.screenshot(path=screenshot_path)
 
-        try:
-            camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
-            camera_btn.click(timeout=5000)
-            page.wait_for_timeout(1000)
-            with page.expect_download(timeout=10000) as download_info:
-                page.locator('[data-name="save-chart-image"], span:has-text("Download image")').first.click(timeout=5000)
-            download_info.value.save_as(screenshot_path)
-        except:
-            try:
-                with page.expect_download(timeout=10000) as download_info:
-                    page.keyboard.press("Control+Alt+s")
-                download_info.value.save_as(screenshot_path)
-            except:
-                page.screenshot(path=screenshot_path)
-
-        browser.close()
-        return screenshot_path
+    return screenshot_path
 
 def send_alert_to_discord(tv_symbol, image_path, q):
-    # Route to correct webhook based on item_type
     target_webhook = DISCORD_STOCK_WEBHOOK if q["item_type"] == "STOCK" else DISCORD_SECTOR_WEBHOOK
     
     if not target_webhook:
         print(f"[-] Error: Webhook secret missing for {q['item_type']}")
         return
+
+    formatted_symbol = tv_symbol.replace(":", "%3A")
+    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
     if q["item_type"] == "STOCK":
         rev_cr = q.get('total_revenue', 0) / 10000000
@@ -173,8 +212,9 @@ def send_alert_to_discord(tv_symbol, image_path, q):
         )
 
     with open(image_path, "rb") as f:
-        files = {"file": (image_path, f, "image/png")}
-        payload = {"content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*"}
+        files = {"file": (os.path.basename(image_path), f, "image/png")}
+        payload = {"content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"}
+        
         try:
             requests.post(target_webhook, data=payload, files=files, timeout=25)
             print(f"[+] Successfully delivered {tv_symbol} payload to Discord.")
@@ -294,12 +334,31 @@ def run_scan():
 
     if all_qualified:
         print(f"\n[!] Initializing Visual Engine for {len(all_qualified)} item(s)...")
-        for q in sorted(all_qualified, key=lambda x: x["distance_pct"]):
-            try:
-                screenshot_path = capture_breakout_chart(q['tv_symbol'], timeframe="1W")
-                send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
-            except Exception as e:
-                print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True, 
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+            )
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                accept_downloads=True 
+            )
+            page = context.new_page()
+            stealth_sync(page)
+            
+            # Login once, use session for all charts
+            automate_tv_login(page)
+
+            for q in sorted(all_qualified, key=lambda x: x["distance_pct"]):
+                try:
+                    screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
+                    send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
+                except Exception as e:
+                    print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
+            
+            browser.close()
+            
         save_watchlist(all_qualified)
     else:
         print("\n0 Stocks and 0 Sectors met criteria today.")
