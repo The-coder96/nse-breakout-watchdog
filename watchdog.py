@@ -3,7 +3,7 @@ LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 ==================================================================================
 Reads watchlist.json and checks live prices.
 Alerts Discord immediately if a Stock OR Sector crosses its multi-year ATH.
-Routes to separate webhooks based on item type.
+Routes to separate webhooks based on item type and includes clickable chart links.
 """
 
 import os
@@ -33,6 +33,11 @@ def send_alert(item, live_price):
     
     symbol = item["symbol"]
     target = float(item["target"])
+    tv_symbol = item.get("tv_symbol", "")
+    
+    # Generate clean, embed-free interactive link
+    formatted_symbol = tv_symbol.replace(":", "%3A")
+    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1D>"
     
     if item["item_type"] == "SECTOR":
         title = f"🚀 **LIVE SECTOR BREAKOUT TRIGGERED!**"
@@ -44,9 +49,10 @@ def send_alert(item, live_price):
     payload = {
         "content": (
             f"{title}\n"
-            f"{desc}\n"
+            f"{desc}\n\n"
             f"• **Current Live Price:** {live_price:.2f}\n"
-            f"• **Status:** Active Intraday Breakout"
+            f"• **Status:** Active Intraday Breakout\n\n"
+            f"📊 **Live Chart:** {tv_link}"
         )
     }
     
@@ -96,7 +102,14 @@ def main():
                 live_price = get_live_sector_price(item["tv_symbol"])
             else:
                 tk = yf.Ticker(item["yf_symbol"])
-                live_price = float(tk.fast_info['lastPrice'])
+                try:
+                    # Primary fast method
+                    live_price = float(tk.fast_info['lastPrice'])
+                except Exception:
+                    # Bulletproof fallback in case yfinance bugs out
+                    df = tk.history(period="1d")
+                    if not df.empty:
+                        live_price = float(df['Close'].iloc[-1])
 
             if live_price is not None:
                 print(f"Checking {item['item_type']} {symbol} -> LTP: {live_price:.2f} | Target: {target:.2f}")
