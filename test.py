@@ -1,11 +1,10 @@
 """
 UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 ==================================================================================
-1. Stocks: Multi-Year Breakout (2Y+ Age, <= 7% Gap, +Net Income, >10Cr Rev).
-2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays) (<= 5% Gap).
-3. Data Engines: yf.Ticker().history() for Stocks (Bug Fix), tvDatafeed for Sectors.
-4. Routing: Automatically splits alerts to separate Discord channels.
-5. Visuals: Human-emulated login + Ctrl+Alt+S Native Chart Exports + iOS Links.
+1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, Verified Full Fundamentals).
+2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays ONLY) (<= 5% Gap).
+3. Fundamentals: Restored Revenue, Net Income (PAT), EBITDA, and EPS.
+4. Visuals: Human-emulated login + Ctrl+Alt+S Native Chart Exports + iOS Links.
 """
 
 import os
@@ -141,7 +140,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     except:
         pass
 
-    page.mouse.click(960, 540) # Ensure chart canvas has focus
+    page.mouse.click(960, 540)
     page.wait_for_timeout(1000)
     native_success = False
 
@@ -194,15 +193,20 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     if q["item_type"] == "STOCK":
         rev_cr = q.get('total_revenue', 0) / 10000000
         ni_cr = q.get('net_income', 0) / 10000000
+        ebitda_cr = q.get('ebitda', 0) / 10000000
+        eps_val = q.get('eps', 0)
+
         title = f"🚨 **MULTI-YEAR SQUEEZE DETECTED: {q['symbol']}**"
         body = (
             f"• Current Price: ₹{q['current_price']:.2f}\n"
             f"• Lifetime High: ₹{q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
             f"• Ceiling Age: {q['age_years']:.2f} Y\n"
             f"• Squeeze Gap: {q['distance_pct']:.2f}%\n\n"
-            f"**FUNDAMENTALS**\n"
+            f"**VERIFIED FUNDAMENTALS (Latest)**\n"
             f"• Total Revenue: ₹{rev_cr:,.2f} Cr\n"
-            f"• Net Income: ₹{ni_cr:,.2f} Cr\n"
+            f"• Net Income (PAT): ₹{ni_cr:,.2f} Cr\n"
+            f"• EBITDA: ₹{ebitda_cr:,.2f} Cr\n"
+            f"• EPS: ₹{eps_val:.2f}\n"
         )
     else:
         if q.get("alert_type") == "SQUEEZE":
@@ -246,9 +250,13 @@ def fetch_tv_candidates(limit_size):
             if "RR" in name or "INVIT" in name or name in ["NHIT", "VERTIS", "KRT", "EMBASSY"]: continue
             if close > 0 and high_all > 0 and (((high_all - close) / high_all) * 100.0) <= 15.0:
                 candidates.append({
-                    "tv_symbol": str(row.get("ticker", "")), "name": name, "close": close,
+                    "tv_symbol": str(row.get("ticker", "")),
+                    "name": name,
+                    "close": close,
                     "total_revenue": float(row.get("total_revenue", 0) or 0),
-                    "net_income": float(row.get("net_income", 0) or 0)
+                    "net_income": float(row.get("net_income", 0) or 0),
+                    "ebitda": float(row.get("ebitda", 0) or 0),
+                    "eps": float(row.get("basic_eps_net_income", 0) or 0)
                 })
         return candidates
     except: return []
@@ -265,14 +273,22 @@ def analyze_stock(c, df):
     age_years = (ist_now.date() - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    if age_years < 2.0 or not (0.00 <= distance_pct <= 7.00): return None
+    # Strict 5.00% Limit for Stocks reverted as requested
+    if age_years < 2.0 or not (0.00 <= distance_pct <= 5.00): return None
     if (df.loc[lh_idx:]["Close"] > lifetime_high).any(): return None
 
     return {
-        "symbol": c["name"], "tv_symbol": c["tv_symbol"], "current_price": current_price,
-        "lifetime_high": lifetime_high, "lh_date": lh_idx.date().strftime("%d-%b-%Y"),
-        "age_years": age_years, "distance_pct": distance_pct,
-        "total_revenue": c.get("total_revenue", 0), "net_income": c.get("net_income", 0),
+        "symbol": c["name"],
+        "tv_symbol": c["tv_symbol"],
+        "current_price": current_price,
+        "lifetime_high": lifetime_high,
+        "lh_date": lh_idx.date().strftime("%d-%b-%Y"),
+        "age_years": age_years,
+        "distance_pct": distance_pct,
+        "total_revenue": c.get("total_revenue", 0),
+        "net_income": c.get("net_income", 0),
+        "ebitda": c.get("ebitda", 0),
+        "eps": c.get("eps", 0),
         "item_type": "STOCK"
     }
 
@@ -308,7 +324,6 @@ def run_scan():
     stock_cands = fetch_tv_candidates(500)
     for c in stock_cands:
         try:
-            # BUG FIX: Swapped yf.download for yf.Ticker().history() to bypass MultiIndex crash
             ticker = yf.Ticker(tv_to_yf(c["tv_symbol"]))
             df = ticker.history(period="max")
             if df is not None and not df.empty:
@@ -319,7 +334,7 @@ def run_scan():
     
     print("\n[Pass 2] Scanning 29 Sector & Thematic Indices via TradingView...")
     if tv:
-        is_friday = True # FORCED TRUE FOR TESTING
+        is_friday = (datetime.now(tz=IST).weekday() == 4)
         for idx in SECTOR_INDICES:
             exchange, symbol = idx["tv"].split(":")
             try:
