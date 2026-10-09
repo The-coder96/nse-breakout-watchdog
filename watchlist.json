@@ -1,1 +1,12 @@
-[]
+[
+    {
+        "symbol": "CNXPHARMA",
+        "tv_symbol": "NSE:CNXPHARMA",
+        "yf_symbol": null,
+        "target": 27255.05,
+        "current_price": 25962.05,
+        "distance_pct": 4.74,
+        "lh_date": "24-Sep-2026",
+        "item_type": "SECTOR"
+    }
+]
