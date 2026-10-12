@@ -1,12 +1,22 @@
 [
     {
-        "symbol": "CNXPHARMA",
-        "tv_symbol": "NSE:CNXPHARMA",
-        "yf_symbol": null,
-        "target": 27255.05,
-        "current_price": 25962.05,
-        "distance_pct": 4.74,
-        "lh_date": "24-Sep-2026",
-        "item_type": "SECTOR"
+        "symbol": "LALPATHLAB",
+        "tv_symbol": "NSE:LALPATHLAB",
+        "yf_symbol": "LALPATHLAB.NS",
+        "target": 2045.0,
+        "current_price": 1969.7,
+        "distance_pct": 3.68,
+        "lh_date": "15-Sep-2021",
+        "item_type": "STOCK"
+    },
+    {
+        "symbol": "NAZARA",
+        "tv_symbol": "NSE:NAZARA",
+        "yf_symbol": "NAZARA.NS",
+        "target": 419.5,
+        "current_price": 404.7,
+        "distance_pct": 3.53,
+        "lh_date": "11-Oct-2021",
+        "item_type": "STOCK"
     }
 ]
