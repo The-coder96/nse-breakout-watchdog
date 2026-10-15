@@ -4,7 +4,8 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, Verified Full Fundamentals).
 2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays ONLY) (<= 5% Gap).
 3. Fundamentals: Restored Revenue, Net Income (PAT), EBITDA, and EPS.
-4. Visuals: Human-emulated login + Ctrl+Alt+S Native Chart Exports + iOS Links.
+4. Visuals: Native Playwright Chart Capture (Clean Headers) + Dual Mobile/Web Links.
+5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
 """
 
 import os
@@ -12,6 +13,7 @@ import time
 import sys
 import json
 import warnings
+import traceback
 import requests
 from datetime import datetime, timedelta, timezone
 import pandas as pd
@@ -19,18 +21,43 @@ import yfinance as yf
 from tradingview_screener import Query, col
 from tvDatafeed import TvDatafeed, Interval
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
 
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
+PROJECT_NAME = "NSE Breakout Watchdog"
 
 # ==============================================================================
 # SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
 # ==============================================================================
 DISCORD_STOCK_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
 DISCORD_SECTOR_WEBHOOK = os.environ.get("DISCORD_SECTOR_WEBHOOK")
+DISCORD_BUG_WEBHOOK = os.environ.get("DISCORD_BUG_WEBHOOK")
 TV_USERNAME = os.environ.get("TV_USERNAME")
 TV_PASSWORD = os.environ.get("TV_PASSWORD")
+
+# ==============================================================================
+# 🚨 DISCORD UNIVERSAL ERROR REPORTER
+# ==============================================================================
+def send_error_to_discord(error_msg, context=""):
+    if not DISCORD_BUG_WEBHOOK:
+        print(f"[-] DISCORD_BUG_WEBHOOK not configured. Suppressing bug report for: {context}")
+        return
+
+    tag = f"🚨 [{PROJECT_NAME} Error]"
+    if context:
+        tag = f"🚨 [{PROJECT_NAME} Error - {context}]"
+
+    # Ensure message fits within Discord's 2000 character limit
+    trace_text = str(error_msg).strip()
+    if len(trace_text) > 1800:
+        trace_text = trace_text[-1800:]
+
+    discord_message = f"{tag}\n```\n{trace_text}\n```"
+
+    try:
+        requests.post(DISCORD_BUG_WEBHOOK, json={"content": discord_message}, timeout=10)
+    except Exception as e:
+        print(f"[-] Failed to push bug report to Discord: {e}")
 
 # ==============================================================================
 # SECTOR UNIVERSE (29 INDICES)
@@ -96,7 +123,8 @@ def automate_tv_login(page):
         try:
             page.locator('span:has-text("Email")').first.click(timeout=5000)
             page.wait_for_timeout(2000)
-        except: pass 
+        except Exception: 
+            pass 
         
         user_input = page.locator('input[name="id_username"]')
         user_input.click()
@@ -114,7 +142,9 @@ def automate_tv_login(page):
         page.wait_for_timeout(12000)
         print("✅ Login sequence completed.")
     except Exception as e:
+        error_details = traceback.format_exc()
         print(f"⚠️ Login sequence failed: {e}")
+        send_error_to_discord(error_details, context="TradingView Login")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
@@ -126,8 +156,10 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     page.wait_for_timeout(6000)
 
     for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
-        try: page.locator(selector).click(timeout=1500)
-        except: pass
+        try: 
+            page.locator(selector).click(timeout=1500)
+        except Exception: 
+            pass
 
     try:
         page.get_by_text("5Y", exact=True).click(timeout=3000)
@@ -135,9 +167,13 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         page.keyboard.type("1W", delay=100)
         page.keyboard.press("Enter")
         page.wait_for_timeout(3000) 
-        for _ in range(2): page.keyboard.press("Control+ArrowDown"); page.wait_for_timeout(200)
-        for _ in range(3): page.keyboard.press("ArrowLeft"); page.wait_for_timeout(100)
-    except:
+        for _ in range(2): 
+            page.keyboard.press("Control+ArrowDown")
+            page.wait_for_timeout(200)
+        for _ in range(3): 
+            page.keyboard.press("ArrowLeft")
+            page.wait_for_timeout(100)
+    except Exception:
         pass
 
     page.mouse.click(960, 540)
@@ -178,7 +214,8 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
                 if (rightArea) rightArea.style.display = 'none';
             ''')
             page.wait_for_timeout(500)
-        except: pass
+        except Exception: 
+            pass
         page.screenshot(path=screenshot_path)
 
     return screenshot_path
@@ -188,7 +225,8 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     if not target_webhook: return
 
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
+    tv_web_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+    tv_app_url = f"tradingview://chart?symbol={formatted_symbol}&interval=1W"
 
     if q["item_type"] == "STOCK":
         rev_cr = q.get('total_revenue', 0) / 10000000
@@ -223,13 +261,23 @@ def send_alert_to_discord(tv_symbol, image_path, q):
 
     with open(image_path, "rb") as f:
         files = {"file": (os.path.basename(image_path), f, "image/png")}
-        payload = {"content": f"{title}\n\n**TECHNICAL**\n{body}\n**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n📊 **Interactive Chart:** {tv_link}"}
+        payload = {
+            "content": (
+                f"{title}\n\n"
+                f"**TECHNICAL**\n{body}\n"
+                f"**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n"
+                f"📊 **Interactive Chart:**\n"
+                f"🌐 [Open in Web Browser]({tv_web_url}) | 📱 [Open in TV App]({tv_app_url})"
+            )
+        }
         
         try:
             requests.post(target_webhook, data=payload, files=files, timeout=25)
-        except Exception: pass
+        except Exception as e:
+            send_error_to_discord(f"Failed to post alert payload for {q['symbol']}: {e}", context="Discord POST Delivery")
 
-    if os.path.exists(image_path): os.remove(image_path)
+    if os.path.exists(image_path): 
+        os.remove(image_path)
 
 def tv_to_yf(tv_symbol):
     return f"{tv_symbol.split(':')[-1].strip().replace('_', '-')}.NS"
@@ -259,7 +307,9 @@ def fetch_tv_candidates(limit_size):
                     "eps": float(row.get("basic_eps_net_income", 0) or 0)
                 })
         return candidates
-    except: return []
+    except Exception as e:
+        send_error_to_discord(traceback.format_exc(), context="TV Screener Query")
+        return []
 
 def analyze_stock(c, df):
     if df is None or len(df) < 500: return None
@@ -273,7 +323,6 @@ def analyze_stock(c, df):
     age_years = (ist_now.date() - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # Strict 5.00% Limit for Stocks reverted as requested
     if age_years < 2.0 or not (0.00 <= distance_pct <= 5.00): return None
     if (df.loc[lh_idx:]["Close"] > lifetime_high).any(): return None
 
@@ -343,22 +392,22 @@ def run_scan():
                     df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close'}, inplace=True)
                     res = analyze_sector(idx, df, is_friday)
                     if res: all_qualified.append(res)
-            except: pass
+            except Exception: 
+                pass
 
     if all_qualified:
         print(f"\n[!] Initializing Visual Engine for {len(all_qualified)} item(s)...")
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True, 
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 accept_downloads=True 
             )
             page = context.new_page()
-            stealth_sync(page)
             
             automate_tv_login(page)
 
@@ -367,7 +416,9 @@ def run_scan():
                     screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
                     send_alert_to_discord(q['tv_symbol'], screenshot_path, q)
                 except Exception as e:
+                    error_trace = traceback.format_exc()
                     print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
+                    send_error_to_discord(error_trace, context=f"Chart Snapshot ({q['symbol']})")
             
             browser.close()
             
@@ -379,4 +430,10 @@ def run_scan():
             requests.post(DISCORD_STOCK_WEBHOOK, json={"content": "📊 **Daily Lifetime High Scanner Complete**\n0 equities or sectors met strict criteria today."}, timeout=10)
 
 if __name__ == "__main__":
-    run_scan()
+    try:
+        run_scan()
+    except Exception as e:
+        crit_err = traceback.format_exc()
+        print("CRITICAL CRASH:\n", crit_err)
+        send_error_to_discord(crit_err, context="Main Scanner Execution")
+        sys.exit(1)
