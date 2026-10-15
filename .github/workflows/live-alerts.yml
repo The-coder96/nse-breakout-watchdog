@@ -27,6 +27,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           DISCORD_SECTOR_WEBHOOK: ${{ secrets.DISCORD_SECTOR_WEBHOOK }}
+          DISCORD_BUG_WEBHOOK: ${{ secrets.DISCORD_BUG_WEBHOOK }}
         run: python watchdog.py
 
       - name: Commit Watchlist Updates
