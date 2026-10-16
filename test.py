@@ -4,7 +4,7 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, Verified Full Fundamentals).
 2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays ONLY) (<= 5% Gap).
 3. Fundamentals: Restored Revenue, Net Income (PAT), EBITDA, and EPS.
-4. Visuals: Native Playwright Chart Capture (Clean Headers) + Dual Mobile/Web Links.
+4. Visuals: Native Playwright Chart Capture + Clean Embed-Free Direct Link.
 5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
 """
 
@@ -47,7 +47,6 @@ def send_error_to_discord(error_msg, context=""):
     if context:
         tag = f"🚨 [{PROJECT_NAME} Error - {context}]"
 
-    # Ensure message fits within Discord's 2000 character limit
     trace_text = str(error_msg).strip()
     if len(trace_text) > 1800:
         trace_text = trace_text[-1800:]
@@ -224,9 +223,9 @@ def send_alert_to_discord(tv_symbol, image_path, q):
     target_webhook = DISCORD_STOCK_WEBHOOK if q["item_type"] == "STOCK" else DISCORD_SECTOR_WEBHOOK
     if not target_webhook: return
 
+    # <url> format: Suppresses the bulky embed preview and allows 1-click direct browser redirect
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_web_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
-    tv_app_url = f"tradingview://chart?symbol={formatted_symbol}&interval=1W"
+    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
     if q["item_type"] == "STOCK":
         rev_cr = q.get('total_revenue', 0) / 10000000
@@ -266,8 +265,7 @@ def send_alert_to_discord(tv_symbol, image_path, q):
                 f"{title}\n\n"
                 f"**TECHNICAL**\n{body}\n"
                 f"**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n"
-                f"📊 **Interactive Chart:**\n"
-                f"🌐 [Open in Web Browser]({tv_web_url}) | 📱 [Open in TV App]({tv_app_url})"
+                f"📊 **Interactive Chart:** {tv_link}"
             )
         }
         
