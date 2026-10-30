@@ -6,6 +6,7 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + DISCORD ALERTS
 3. Fundamentals: Restored Revenue, Net Income (PAT), EBITDA, and EPS.
 4. Visuals: Native Playwright Chart Capture + Clean Embed-Free Direct Link.
 5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
+6. Execution: Silent exit on 0-candidate days (no Discord spam).
 """
 
 import os
@@ -321,6 +322,7 @@ def analyze_stock(c, df):
     age_years = (ist_now.date() - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
+    # 5.00% Limit for Stocks (2+ Year ATH Age)
     if age_years < 2.0 or not (0.00 <= distance_pct <= 5.00): return None
     if (df.loc[lh_idx:]["Close"] > lifetime_high).any(): return None
 
@@ -349,6 +351,7 @@ def analyze_sector(idx, df, is_friday):
     age_years = (today - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
+    # 5.00% Limit for Sectors
     if not (0.00 <= distance_pct <= 5.00): return None
 
     is_multi_year = (1.0 <= age_years <= 10.0) and not (df.loc[lh_idx:]["Close"] > lifetime_high).any()
@@ -377,7 +380,7 @@ def run_scan():
                 res = analyze_stock(c, df)
                 if res: all_qualified.append(res)
         except Exception as e: 
-            print(f"[-] Data error for {c['symbol']}: {e}")
+            print(f"[-] Data error for {c['name']}: {e}")
     
     print("\n[Pass 2] Scanning 29 Sector & Thematic Indices via TradingView...")
     if tv:
@@ -422,10 +425,9 @@ def run_scan():
             
         save_watchlist(all_qualified)
     else:
-        print("\n0 Stocks and 0 Sectors met criteria today.")
+        # Silent exit: Cleans up the watchlist without sending repetitive Discord spam
+        print("\n0 Stocks and 0 Sectors met criteria today. Silent exit (no Discord post).")
         save_watchlist([])
-        if DISCORD_STOCK_WEBHOOK:
-            requests.post(DISCORD_STOCK_WEBHOOK, json={"content": "📊 **Daily Lifetime High Scanner Complete**\n0 equities or sectors met strict criteria today."}, timeout=10)
 
 if __name__ == "__main__":
     try:
