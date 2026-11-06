@@ -1,1 +1,72 @@
-[]
+[
+    {
+        "symbol": "BANKNIFTY",
+        "tv_symbol": "NSE:BANKNIFTY",
+        "yf_symbol": null,
+        "target": 61764.85,
+        "current_price": 59086.0,
+        "distance_pct": 4.34,
+        "lh_date": "03-Feb-2026",
+        "item_type": "SECTOR"
+    },
+    {
+        "symbol": "CNX500",
+        "tv_symbol": "NSE:CNX500",
+        "yf_symbol": null,
+        "target": 24573.4,
+        "current_price": 23456.95,
+        "distance_pct": 4.54,
+        "lh_date": "27-Sep-2024",
+        "item_type": "SECTOR"
+    },
+    {
+        "symbol": "CNXPHARMA",
+        "tv_symbol": "NSE:CNXPHARMA",
+        "yf_symbol": null,
+        "target": 27940.4,
+        "current_price": 27940.4,
+        "distance_pct": 0.0,
+        "lh_date": "06-Nov-2026",
+        "item_type": "SECTOR"
+    },
+    {
+        "symbol": "CNXINFRA",
+        "tv_symbol": "NSE:CNXINFRA",
+        "yf_symbol": null,
+        "target": 9792.6,
+        "current_price": 9446.8,
+        "distance_pct": 3.53,
+        "lh_date": "05-Jan-2026",
+        "item_type": "SECTOR"
+    },
+    {
+        "symbol": "CNXFINANCE",
+        "tv_symbol": "NSE:CNXFINANCE",
+        "yf_symbol": null,
+        "target": 28562.5,
+        "current_price": 27283.95,
+        "distance_pct": 4.48,
+        "lh_date": "23-Feb-2026",
+        "item_type": "SECTOR"
+    },
+    {
+        "symbol": "NIFTYPVTBANK",
+        "tv_symbol": "NSE:NIFTYPVTBANK",
+        "yf_symbol": null,
+        "target": 29748.45,
+        "current_price": 29503.4,
+        "distance_pct": 0.82,
+        "lh_date": "03-Feb-2026",
+        "item_type": "SECTOR"
+    },
+    {
+        "symbol": "NIFTY_HEALTHCARE",
+        "tv_symbol": "NSE:NIFTY_HEALTHCARE",
+        "yf_symbol": null,
+        "target": 16941.7,
+        "current_price": 16931.2,
+        "distance_pct": 0.06,
+        "lh_date": "31-Aug-2026",
+        "item_type": "SECTOR"
+    }
+]
