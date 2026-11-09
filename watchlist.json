@@ -20,16 +20,6 @@
         "item_type": "SECTOR"
     },
     {
-        "symbol": "CNXPHARMA",
-        "tv_symbol": "NSE:CNXPHARMA",
-        "yf_symbol": null,
-        "target": 27940.4,
-        "current_price": 27940.4,
-        "distance_pct": 0.0,
-        "lh_date": "06-Nov-2026",
-        "item_type": "SECTOR"
-    },
-    {
         "symbol": "CNXINFRA",
         "tv_symbol": "NSE:CNXINFRA",
         "yf_symbol": null,
@@ -57,16 +47,6 @@
         "current_price": 29503.4,
         "distance_pct": 0.82,
         "lh_date": "03-Feb-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "NIFTY_HEALTHCARE",
-        "tv_symbol": "NSE:NIFTY_HEALTHCARE",
-        "yf_symbol": null,
-        "target": 16941.7,
-        "current_price": 16931.2,
-        "distance_pct": 0.06,
-        "lh_date": "31-Aug-2026",
         "item_type": "SECTOR"
     }
 ]
