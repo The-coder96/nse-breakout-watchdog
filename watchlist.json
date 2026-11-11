@@ -1,21 +1,11 @@
 [
     {
-        "symbol": "SAREGAMA",
-        "tv_symbol": "NSE:SAREGAMA",
-        "yf_symbol": "SAREGAMA.NS",
-        "target": 675.59,
-        "current_price": 647.8,
-        "distance_pct": 4.11,
-        "lh_date": "01-Oct-2024",
-        "item_type": "STOCK"
-    },
-    {
         "symbol": "CNX500",
         "tv_symbol": "NSE:CNX500",
         "yf_symbol": null,
         "target": 24573.4,
-        "current_price": 23567.0,
-        "distance_pct": 4.1,
+        "current_price": 23779.3,
+        "distance_pct": 3.23,
         "lh_date": "27-Sep-2024",
         "item_type": "SECTOR"
     }
