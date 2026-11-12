@@ -375,7 +375,10 @@ def run_scan():
     for c in stock_cands:
         try:
             ticker = yf.Ticker(tv_to_yf(c["tv_symbol"]))
-            df = ticker.history(period="max")
+            
+            # FIX: auto_adjust=False stops yfinance from adjusting historical peaks for dividend stocks
+            df = ticker.history(period="max", auto_adjust=False)
+            
             if df is not None and not df.empty:
                 res = analyze_stock(c, df)
                 if res: all_qualified.append(res)
