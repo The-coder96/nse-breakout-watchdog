@@ -10,26 +10,6 @@
         "item_type": "STOCK"
     },
     {
-        "symbol": "PETRONET",
-        "tv_symbol": "NSE:PETRONET",
-        "yf_symbol": "PETRONET.NS",
-        "target": 351.26,
-        "current_price": 335.0,
-        "distance_pct": 4.63,
-        "lh_date": "21-Aug-2024",
-        "item_type": "STOCK"
-    },
-    {
-        "symbol": "SAREGAMA",
-        "tv_symbol": "NSE:SAREGAMA",
-        "yf_symbol": "SAREGAMA.NS",
-        "target": 675.59,
-        "current_price": 642.25,
-        "distance_pct": 4.93,
-        "lh_date": "01-Oct-2024",
-        "item_type": "STOCK"
-    },
-    {
         "symbol": "CNX500",
         "tv_symbol": "NSE:CNX500",
         "yf_symbol": null,
