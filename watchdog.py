@@ -3,7 +3,7 @@ LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 ==================================================================================
 Reads watchlist.json and checks live prices.
 Alerts Discord immediately if a Stock OR Sector crosses its multi-year ATH.
-Routes to separate webhooks based on item type and includes clickable dual links (App + Web).
+Format mirrors the evening scanner (Clean Text + Interactive Link + Embedded Chart).
 """
 
 import os
@@ -59,28 +59,43 @@ def send_alert(item, live_price):
     target = float(item["target"])
     tv_symbol = item.get("tv_symbol", "")
     
-    # Generate Dual Link (Web + Native App Protocol)
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_web_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1D"
-    tv_app_url = f"tradingview://chart?symbol={formatted_symbol}&interval=1D"
+    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1D"
     
-    if item["item_type"] == "SECTOR":
-        title = f"🚀 **LIVE SECTOR BREAKOUT TRIGGERED!**"
-        desc = f"**{symbol}** Index has just crossed its Absolute Ceiling of {target:.2f}!"
-    else:
-        title = f"🚨 **LIVE STOCK BREAKOUT TRIGGERED!**"
-        desc = f"**{symbol}** has just crossed its Lifetime High of ₹{target:.2f}!"
+    # Auto-generate a lightweight TradingView public mini-chart for the embed
+    exchange, short_sym = tv_symbol.split(":")
+    chart_image_url = f"https://s3.tradingview.com/tv-screener/screener-mini-chart-{exchange}-{short_sym}-1D.png"
 
+    if item["item_type"] == "SECTOR":
+        title = f"🚀 **LIVE SECTOR BREAKOUT TRIGGERED: {symbol}**"
+        body = (
+            f"• Current Level: {live_price:.2f}\n"
+            f"• Breakout Target (Absolute Ceiling): {target:.2f}\n"
+            f"• Status: Active Intraday Breakout"
+        )
+    else:
+        title = f"🚨 **LIVE STOCK BREAKOUT TRIGGERED: {symbol}**"
+        body = (
+            f"• Current Price: ₹{live_price:.2f}\n"
+            f"• Breakout Target (Lifetime High): ₹{target:.2f}\n"
+            f"• Status: Active Intraday Breakout"
+        )
+
+    # Formatted to perfectly match the Evening Scanner visual layout
     payload = {
         "content": (
-            f"{title}\n"
-            f"{desc}\n\n"
-            f"• **Current Live Price:** ₹{live_price:.2f}\n"
-            f"• **Breakout Target:** ₹{target:.2f}\n"
-            f"• **Status:** Active Intraday Breakout\n\n"
-            f"📊 **Live Chart:**\n"
-            f"🌐 [Open in Web Browser]({tv_web_url}) | 📱 [Open in TV App]({tv_app_url})"
-        )
+            f"{title}\n\n"
+            f"**TECHNICAL**\n{body}\n\n"
+            f"**CHART**\n*Attached: Live Intraday (1D) Snapshot.*\n\n"
+            f"📊 **Interactive Chart:** {tv_link}"
+        ),
+        "embeds": [
+            {
+                "image": {
+                    "url": chart_image_url
+                }
+            }
+        ]
     }
     
     try:
@@ -136,10 +151,8 @@ def main():
                 yf_symbol = item.get("yf_symbol") or f"{symbol}.NS"
                 tk = yf.Ticker(yf_symbol)
                 try:
-                    # Primary fast method
                     live_price = float(tk.fast_info['lastPrice'])
                 except Exception:
-                    # Bulletproof fallback in case yfinance fast_info fails
                     df = tk.history(period="1d")
                     if not df.empty:
                         live_price = float(df['Close'].iloc[-1])
@@ -159,7 +172,6 @@ def main():
             print(f"Error checking {symbol}: {e}")
             remaining_items.append(item)
 
-    # Overwrite watchlist, dropping only the ones that triggered an alert
     try:
         with open(WATCHLIST_FILE, "w") as f:
             json.dump(remaining_items, f, indent=4)
