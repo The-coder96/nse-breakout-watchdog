@@ -1,92 +1,32 @@
 [
     {
-        "symbol": "NIFTY 50",
-        "tv_symbol": "NSE:NIFTY",
-        "yf_symbol": null,
-        "target": 26373.2,
-        "current_price": 25144.3,
-        "distance_pct": 4.66,
-        "lh_date": "05-Jan-2026",
-        "item_type": "SECTOR"
+        "symbol": "MAHABANK",
+        "tv_symbol": "NSE:MAHABANK",
+        "yf_symbol": "MAHABANK.NS",
+        "target": 96.75,
+        "current_price": 92.0,
+        "distance_pct": 4.91,
+        "lh_date": "07-Jan-2008",
+        "item_type": "STOCK"
     },
     {
-        "symbol": "BANKNIFTY",
-        "tv_symbol": "NSE:BANKNIFTY",
-        "yf_symbol": null,
-        "target": 61764.85,
-        "current_price": 61034.1,
-        "distance_pct": 1.18,
-        "lh_date": "03-Feb-2026",
-        "item_type": "SECTOR"
+        "symbol": "SAREGAMA",
+        "tv_symbol": "NSE:SAREGAMA",
+        "yf_symbol": "SAREGAMA.NS",
+        "target": 688.9,
+        "current_price": 670.0,
+        "distance_pct": 2.74,
+        "lh_date": "01-Oct-2024",
+        "item_type": "STOCK"
     },
     {
         "symbol": "CNX500",
         "tv_symbol": "NSE:CNX500",
         "yf_symbol": null,
         "target": 24573.4,
-        "current_price": 23734.2,
-        "distance_pct": 3.42,
+        "current_price": 23752.4,
+        "distance_pct": 3.34,
         "lh_date": "27-Sep-2024",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXMIDCAP",
-        "tv_symbol": "NSE:CNXMIDCAP",
-        "yf_symbol": null,
-        "target": 64450.9,
-        "current_price": 61889.5,
-        "distance_pct": 3.97,
-        "lh_date": "26-Aug-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXSMLLCAP",
-        "tv_symbol": "NSE:CNXSMALLCAP",
-        "yf_symbol": null,
-        "target": 20187.8,
-        "current_price": 19656.45,
-        "distance_pct": 2.63,
-        "lh_date": "04-Sep-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXPHARMA",
-        "tv_symbol": "NSE:CNXPHARMA",
-        "yf_symbol": null,
-        "target": 29224.85,
-        "current_price": 28535.75,
-        "distance_pct": 2.36,
-        "lh_date": "09-Nov-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXINFRA",
-        "tv_symbol": "NSE:CNXINFRA",
-        "yf_symbol": null,
-        "target": 9792.6,
-        "current_price": 9479.65,
-        "distance_pct": 3.2,
-        "lh_date": "05-Jan-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXFINANCE",
-        "tv_symbol": "NSE:CNXFINANCE",
-        "yf_symbol": null,
-        "target": 28562.5,
-        "current_price": 27855.5,
-        "distance_pct": 2.48,
-        "lh_date": "23-Feb-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "NIFTY_HEALTHCARE",
-        "tv_symbol": "NSE:NIFTY_HEALTHCARE",
-        "yf_symbol": null,
-        "target": 17594.35,
-        "current_price": 17233.05,
-        "distance_pct": 2.05,
-        "lh_date": "09-Nov-2026",
         "item_type": "SECTOR"
     }
 ]
