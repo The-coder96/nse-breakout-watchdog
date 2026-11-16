@@ -80,16 +80,6 @@
         "item_type": "SECTOR"
     },
     {
-        "symbol": "NIFTYPVTBANK",
-        "tv_symbol": "NSE:NIFTYPVTBANK",
-        "yf_symbol": null,
-        "target": 30260.6,
-        "current_price": 29977.95,
-        "distance_pct": 0.93,
-        "lh_date": "11-Nov-2026",
-        "item_type": "SECTOR"
-    },
-    {
         "symbol": "NIFTY_HEALTHCARE",
         "tv_symbol": "NSE:NIFTY_HEALTHCARE",
         "yf_symbol": null,
