@@ -1,12 +1,22 @@
 [
     {
-        "symbol": "MAHABANK",
-        "tv_symbol": "NSE:MAHABANK",
-        "yf_symbol": "MAHABANK.NS",
-        "target": 96.75,
-        "current_price": 95.99,
-        "distance_pct": 0.79,
-        "lh_date": "07-Jan-2008",
+        "symbol": "HONASA",
+        "tv_symbol": "NSE:HONASA",
+        "yf_symbol": "HONASA.NS",
+        "target": 547.0,
+        "current_price": 524.5,
+        "distance_pct": 4.11,
+        "lh_date": "10-Sep-2024",
         "item_type": "STOCK"
+    },
+    {
+        "symbol": "CNX500",
+        "tv_symbol": "NSE:CNX500",
+        "yf_symbol": null,
+        "target": 24573.4,
+        "current_price": 23630.25,
+        "distance_pct": 3.84,
+        "lh_date": "27-Sep-2024",
+        "item_type": "SECTOR"
     }
 ]
