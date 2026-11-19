@@ -20,14 +20,20 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install yfinance requests pandas
+          pip install yfinance requests pandas playwright
           pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
+
+      - name: Install Playwright Chromium Browser
+        run: |
+          playwright install --with-deps chromium
 
       - name: Run Watchdog
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           DISCORD_SECTOR_WEBHOOK: ${{ secrets.DISCORD_SECTOR_WEBHOOK }}
           DISCORD_BUG_WEBHOOK: ${{ secrets.DISCORD_BUG_WEBHOOK }}
+          TV_USERNAME: ${{ secrets.TV_USERNAME }}
+          TV_PASSWORD: ${{ secrets.TV_PASSWORD }}
         run: python watchdog.py
 
       - name: Commit Watchlist Updates
