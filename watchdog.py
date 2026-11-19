@@ -2,8 +2,10 @@
 LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 ==================================================================================
 Reads watchlist.json and checks live prices.
-Alerts Discord immediately if a Stock OR Sector crosses its multi-year ATH.
-Visuals: Uses the same native Playwright TradingView capture + clean direct link as test.py.
+If a Stock OR Sector crosses its multi-year ATH:
+1. Launches Playwright (only on trigger) and logs into TradingView.
+2. Captures the native TradingView chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
+3. Sends the alert + attached PNG chart + clean embed-free link to the routed Discord webhook.
 """
 
 import os
@@ -38,7 +40,6 @@ def send_error_to_discord(error_msg, context="Watchdog"):
         return
 
     tag = f"🚨 [{PROJECT_NAME} Error - {context}]"
-
     trace_text = str(error_msg).strip()
     if len(trace_text) > 1800:
         trace_text = trace_text[-1800:]
@@ -57,7 +58,7 @@ except Exception as e:
     tv = None
 
 # ==============================================================================
-# PLAYWRIGHT VISUAL ENGINE (PORTED FROM test.py)
+# PLAYWRIGHT VISUAL ENGINE (MATCHES test.py)
 # ==============================================================================
 def automate_tv_login(page):
     if not TV_USERNAME or not TV_PASSWORD:
@@ -101,7 +102,7 @@ def automate_tv_login(page):
         send_error_to_discord(error_details, context="Watchdog TV Login")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
-    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
+    print(f"📸 Generating chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_breakout.png"
@@ -134,6 +135,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     page.wait_for_timeout(1000)
     native_success = False
 
+    # Attempt 1: Native Ctrl+Alt+S chart export
     try:
         with page.expect_download(timeout=6000) as download_info:
             page.keyboard.down("Control")
@@ -147,6 +149,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     except Exception:
         pass
 
+    # Attempt 2: Native Camera toolbar button
     if not native_success:
         try:
             camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
@@ -161,6 +164,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         except Exception:
             pass
 
+    # Attempt 3: Edge-to-edge DOM cleanup fallback
     if not native_success:
         try:
             page.evaluate('''
@@ -190,7 +194,7 @@ def send_alert(item, live_price, image_path=None):
     target = float(item["target"])
     tv_symbol = item.get("tv_symbol", "")
 
-    # <url> format suppresses Discord's generic preview card while keeping the blue clickable link
+    # <url> suppresses Discord's generic link preview while keeping the clickable blue link
     formatted_symbol = tv_symbol.replace(":", "%3A")
     tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
@@ -199,19 +203,19 @@ def send_alert(item, live_price, image_path=None):
         body = (
             f"• Current Level: {live_price:.2f}\n"
             f"• Breakout Target (Absolute Ceiling): {target:.2f}\n"
-            f"• Status: Active Intraday Breakout"
+            f"• Status: Active Intraday Breakout\n"
         )
     else:
         title = f"🚨 **LIVE STOCK BREAKOUT TRIGGERED: {symbol}**"
         body = (
             f"• Current Price: ₹{live_price:.2f}\n"
             f"• Breakout Target (Lifetime High): ₹{target:.2f}\n"
-            f"• Status: Active Intraday Breakout"
+            f"• Status: Active Intraday Breakout\n"
         )
 
     content_text = (
         f"{title}\n\n"
-        f"**TECHNICAL**\n{body}\n\n"
+        f"**TECHNICAL**\n{body}\n"
         f"**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n"
         f"📊 **Interactive Chart:** {tv_link}"
     )
@@ -245,7 +249,7 @@ def get_live_sector_price(tv_symbol):
         exchange, symbol = tv_symbol.split(":", 1)
         df = tv.get_hist(symbol=symbol, exchange=exchange, interval=Interval.in_daily, n_bars=2)
         if df is not None and not df.empty:
-            return float(df['close'].iloc[-1])
+            return float(df["close"].iloc[-1])
     except Exception:
         pass
     return None
@@ -283,11 +287,11 @@ def main():
                 yf_symbol = item.get("yf_symbol") or f"{symbol}.NS"
                 tk = yf.Ticker(yf_symbol)
                 try:
-                    live_price = float(tk.fast_info['lastPrice'])
+                    live_price = float(tk.fast_info["lastPrice"])
                 except Exception:
                     df = tk.history(period="1d", auto_adjust=False)
                     if not df.empty:
-                        live_price = float(df['Close'].iloc[-1])
+                        live_price = float(df["Close"].iloc[-1])
 
             if live_price is not None:
                 print(f"Checking {item.get('item_type', 'STOCK')} {symbol} -> LTP: {live_price:.2f} | Target: {target:.2f}")
@@ -304,7 +308,7 @@ def main():
             print(f"Error checking {symbol}: {e}")
             remaining_items.append(item)
 
-    # Launch Playwright only when at least one breakout actually triggers
+    # Only spin up Playwright when at least 1 breakout actually triggers
     if triggered_items:
         print(f"\n[!] Initializing Visual Engine for {len(triggered_items)} live breakout(s)...")
         with sync_playwright() as p:
@@ -327,13 +331,14 @@ def main():
                     screenshot_path = capture_breakout_chart(page, item["tv_symbol"], timeframe="1W")
                 except Exception as e:
                     error_trace = traceback.format_exc()
-                    print(f"[-] Failed to generate chart for {item['symbol']}: {e}")
+                    print(f"[-] Failed to capture chart for {item['symbol']}: {e}")
                     send_error_to_discord(error_trace, context=f"Watchdog Chart Snapshot ({item['symbol']})")
 
                 send_alert(item, live_price, screenshot_path)
 
             browser.close()
 
+    # Overwrite watchlist, dropping only the items that triggered an alert
     try:
         with open(WATCHLIST_FILE, "w") as f:
             json.dump(remaining_items, f, indent=4)
