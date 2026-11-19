@@ -3,22 +3,30 @@ LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 ==================================================================================
 Reads watchlist.json and checks live prices.
 Alerts Discord immediately if a Stock OR Sector crosses its multi-year ATH.
-Format mirrors the evening scanner (Clean Text + Interactive Link + Embedded Chart).
+Visuals: Uses the same native Playwright TradingView capture + clean direct link as test.py.
 """
 
 import os
+import sys
 import json
+import warnings
 import traceback
 import requests
 import yfinance as yf
 from tvDatafeed import TvDatafeed, Interval
+from playwright.sync_api import sync_playwright
 
+warnings.filterwarnings("ignore")
 PROJECT_NAME = "NSE Breakout Watchdog"
 
-# Webhooks Configuration
+# ==============================================================================
+# SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
+# ==============================================================================
 DISCORD_STOCK_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
 DISCORD_SECTOR_WEBHOOK = os.environ.get("DISCORD_SECTOR_WEBHOOK")
 DISCORD_BUG_WEBHOOK = os.environ.get("DISCORD_BUG_WEBHOOK")
+TV_USERNAME = os.environ.get("TV_USERNAME")
+TV_PASSWORD = os.environ.get("TV_PASSWORD")
 WATCHLIST_FILE = "watchlist.json"
 
 # ==============================================================================
@@ -48,23 +56,143 @@ except Exception as e:
     print(f"[-] Failed to initialize TradingView feed in Watchdog: {e}")
     tv = None
 
-def send_alert(item, live_price):
+# ==============================================================================
+# PLAYWRIGHT VISUAL ENGINE (PORTED FROM test.py)
+# ==============================================================================
+def automate_tv_login(page):
+    if not TV_USERNAME or not TV_PASSWORD:
+        return
+
+    print("🔑 Attempting live TradingView login via human-emulation...")
+    try:
+        page.goto("https://www.tradingview.com/", timeout=60000)
+        page.wait_for_timeout(4000)
+
+        page.locator('.tv-header__user-menu-button--anonymous').click(timeout=10000)
+        page.wait_for_timeout(1500)
+
+        page.locator('button[data-name="header-user-menu-sign-in"]').click(timeout=10000)
+        page.wait_for_timeout(3000)
+
+        try:
+            page.locator('span:has-text("Email")').first.click(timeout=5000)
+            page.wait_for_timeout(2000)
+        except Exception:
+            pass
+
+        user_input = page.locator('input[name="id_username"]')
+        user_input.click()
+        page.wait_for_timeout(400)
+        user_input.press_sequentially(TV_USERNAME, delay=120)
+        page.wait_for_timeout(800)
+
+        pass_input = page.locator('input[name="id_password"]')
+        pass_input.click()
+        page.wait_for_timeout(400)
+        pass_input.press_sequentially(TV_PASSWORD, delay=120)
+        page.wait_for_timeout(1000)
+
+        pass_input.press("Enter")
+        page.wait_for_timeout(12000)
+        print("✅ Login sequence completed.")
+    except Exception as e:
+        error_details = traceback.format_exc()
+        print(f"⚠️ Login sequence failed: {e}")
+        send_error_to_discord(error_details, context="Watchdog TV Login")
+
+def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
+    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
+    formatted_symbol = tv_symbol.replace(":", "%3A")
+    url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
+    screenshot_path = f"{tv_symbol.replace(':', '_')}_breakout.png"
+
+    page.goto(url, timeout=60000)
+    page.wait_for_timeout(6000)
+
+    for selector in ['button[aria-label="Close dialog"]', 'button:has-text("Accept all")', 'button[aria-label="Close"]']:
+        try:
+            page.locator(selector).click(timeout=1500)
+        except Exception:
+            pass
+
+    try:
+        page.get_by_text("5Y", exact=True).click(timeout=3000)
+        page.wait_for_timeout(1000)
+        page.keyboard.type("1W", delay=100)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(3000)
+        for _ in range(2):
+            page.keyboard.press("Control+ArrowDown")
+            page.wait_for_timeout(200)
+        for _ in range(3):
+            page.keyboard.press("ArrowLeft")
+            page.wait_for_timeout(100)
+    except Exception:
+        pass
+
+    page.mouse.click(960, 540)
+    page.wait_for_timeout(1000)
+    native_success = False
+
+    try:
+        with page.expect_download(timeout=6000) as download_info:
+            page.keyboard.down("Control")
+            page.keyboard.down("Alt")
+            page.keyboard.press("s")
+            page.keyboard.up("Alt")
+            page.keyboard.up("Control")
+
+        download_info.value.save_as(screenshot_path)
+        native_success = True
+    except Exception:
+        pass
+
+    if not native_success:
+        try:
+            camera_btn = page.locator('button[id="header-toolbar-screenshot"], [data-name="header-toolbar-screenshot"]').first
+            camera_btn.click(timeout=5000)
+            page.wait_for_selector('[data-name="save-chart-image"]', state="visible", timeout=3000)
+
+            with page.expect_download(timeout=6000) as download_info:
+                page.locator('[data-name="save-chart-image"]').click()
+
+            download_info.value.save_as(screenshot_path)
+            native_success = True
+        except Exception:
+            pass
+
+    if not native_success:
+        try:
+            page.evaluate('''
+                const leftBar = document.querySelector('[class*="layout__area--left"]'); if (leftBar) leftBar.style.display = 'none';
+                const topBar = document.querySelector('[class*="layout__area--top"]'); if (topBar) topBar.style.display = 'none';
+                const rightBar = document.querySelector('[class*="layout__area--right"]'); if (rightBar) rightBar.style.display = 'none';
+                const bottomWidget = document.querySelector('[data-name="bottom-widget-bar"]'); if (bottomWidget) bottomWidget.style.display = 'none';
+            ''')
+            page.wait_for_timeout(500)
+        except Exception:
+            pass
+        page.screenshot(path=screenshot_path)
+
+    return screenshot_path
+
+# ==============================================================================
+# DISCORD ALERT DELIVERY
+# ==============================================================================
+def send_alert(item, live_price, image_path=None):
     target_webhook = DISCORD_STOCK_WEBHOOK if item["item_type"] == "STOCK" else DISCORD_SECTOR_WEBHOOK
-    
+
     if not target_webhook:
         print(f"[-] Webhook missing for {item['item_type']}")
         return
-    
+
     symbol = item["symbol"]
     target = float(item["target"])
     tv_symbol = item.get("tv_symbol", "")
-    
+
+    # <url> format suppresses Discord's generic preview card while keeping the blue clickable link
     formatted_symbol = tv_symbol.replace(":", "%3A")
-    tv_link = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1D"
-    
-    # Auto-generate a lightweight TradingView public mini-chart for the embed
-    exchange, short_sym = tv_symbol.split(":")
-    chart_image_url = f"https://s3.tradingview.com/tv-screener/screener-mini-chart-{exchange}-{short_sym}-1D.png"
+    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
 
     if item["item_type"] == "SECTOR":
         title = f"🚀 **LIVE SECTOR BREAKOUT TRIGGERED: {symbol}**"
@@ -81,25 +209,21 @@ def send_alert(item, live_price):
             f"• Status: Active Intraday Breakout"
         )
 
-    # Formatted to perfectly match the Evening Scanner visual layout
-    payload = {
-        "content": (
-            f"{title}\n\n"
-            f"**TECHNICAL**\n{body}\n\n"
-            f"**CHART**\n*Attached: Live Intraday (1D) Snapshot.*\n\n"
-            f"📊 **Interactive Chart:** {tv_link}"
-        ),
-        "embeds": [
-            {
-                "image": {
-                    "url": chart_image_url
-                }
-            }
-        ]
-    }
-    
+    content_text = (
+        f"{title}\n\n"
+        f"**TECHNICAL**\n{body}\n\n"
+        f"**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n"
+        f"📊 **Interactive Chart:** {tv_link}"
+    )
+
     try:
-        res = requests.post(target_webhook, json=payload, timeout=10)
+        if image_path and os.path.exists(image_path):
+            with open(image_path, "rb") as f:
+                files = {"file": (os.path.basename(image_path), f, "image/png")}
+                res = requests.post(target_webhook, data={"content": content_text}, files=files, timeout=25)
+        else:
+            res = requests.post(target_webhook, json={"content": content_text}, timeout=10)
+
         if res.status_code in [200, 204]:
             print(f"[+] Alert sent for {symbol}")
         else:
@@ -107,11 +231,18 @@ def send_alert(item, live_price):
     except Exception as e:
         print(f"[-] Alert failed for {symbol}: {e}")
         send_error_to_discord(traceback.format_exc(), context=f"Alert Delivery ({symbol})")
+    finally:
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
 
+# ==============================================================================
+# LIVE PRICE CHECKER
+# ==============================================================================
 def get_live_sector_price(tv_symbol):
-    if not tv: return None
+    if not tv or ":" not in tv_symbol:
+        return None
     try:
-        exchange, symbol = tv_symbol.split(":")
+        exchange, symbol = tv_symbol.split(":", 1)
         df = tv.get_hist(symbol=symbol, exchange=exchange, interval=Interval.in_daily, n_bars=2)
         if df is not None and not df.empty:
             return float(df['close'].iloc[-1])
@@ -137,6 +268,7 @@ def main():
         print("Watchlist is empty. Exiting.")
         return
 
+    triggered_items = []
     remaining_items = []
 
     for item in watchlist:
@@ -153,7 +285,7 @@ def main():
                 try:
                     live_price = float(tk.fast_info['lastPrice'])
                 except Exception:
-                    df = tk.history(period="1d")
+                    df = tk.history(period="1d", auto_adjust=False)
                     if not df.empty:
                         live_price = float(df['Close'].iloc[-1])
 
@@ -161,27 +293,57 @@ def main():
                 print(f"Checking {item.get('item_type', 'STOCK')} {symbol} -> LTP: {live_price:.2f} | Target: {target:.2f}")
 
                 if live_price >= target and target > 0:
-                    send_alert(item, live_price)
+                    triggered_items.append((item, live_price))
                 else:
                     remaining_items.append(item)
             else:
                 print(f"[-] Could not fetch live price for {symbol}")
                 remaining_items.append(item)
-                
+
         except Exception as e:
             print(f"Error checking {symbol}: {e}")
             remaining_items.append(item)
 
+    # Launch Playwright only when at least one breakout actually triggers
+    if triggered_items:
+        print(f"\n[!] Initializing Visual Engine for {len(triggered_items)} live breakout(s)...")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                accept_downloads=True
+            )
+            page = context.new_page()
+
+            automate_tv_login(page)
+
+            for item, live_price in triggered_items:
+                screenshot_path = None
+                try:
+                    screenshot_path = capture_breakout_chart(page, item["tv_symbol"], timeframe="1W")
+                except Exception as e:
+                    error_trace = traceback.format_exc()
+                    print(f"[-] Failed to generate chart for {item['symbol']}: {e}")
+                    send_error_to_discord(error_trace, context=f"Watchdog Chart Snapshot ({item['symbol']})")
+
+                send_alert(item, live_price, screenshot_path)
+
+            browser.close()
+
     try:
         with open(WATCHLIST_FILE, "w") as f:
             json.dump(remaining_items, f, indent=4)
-    except Exception as e:
+    except Exception:
         send_error_to_discord(traceback.format_exc(), context="Saving watchlist.json")
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
+    except Exception:
         crit_err = traceback.format_exc()
         print("CRITICAL WATCHDOG CRASH:\n", crit_err)
         send_error_to_discord(crit_err, context="Watchdog Main Execution")
