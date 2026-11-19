@@ -6,9 +6,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: watchlist-updater
+  cancel-in-progress: false
+
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -37,10 +42,16 @@ jobs:
           TV_PASSWORD: ${{ secrets.TV_PASSWORD }}
         run: python test.py
 
-      - name: Commit and Push Watchlist
+      - name: Commit and Push Watchlist & History
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add watchlist.json || true
-          git commit -m "Update watchlist.json from evening scan" || echo "No changes to commit"
-          git push
+          if [ -f watchlist.json ]; then git add watchlist.json; fi
+          if [ -f alert_history.json ]; then git add alert_history.json; fi
+          if git diff --staged --quiet; then
+            echo "No changes to watchlist or alert history. Skipping commit and push."
+          else
+            git commit -m "Evening Scan: Update watchlist and alert history"
+            git pull --rebase origin main
+            git push
+          fi
