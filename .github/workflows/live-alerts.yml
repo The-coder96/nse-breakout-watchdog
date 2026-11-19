@@ -13,6 +13,7 @@ concurrency:
 jobs:
   check-prices:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -40,15 +41,16 @@ jobs:
           TV_PASSWORD: ${{ secrets.TV_PASSWORD }}
         run: python watchdog.py
 
-      - name: Commit Watchlist Updates
+      - name: Commit Watchlist & History Updates
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add watchlist.json || true
+          if [ -f watchlist.json ]; then git add watchlist.json; fi
+          if [ -f alert_history.json ]; then git add alert_history.json; fi
           if git diff --staged --quiet; then
-            echo "No changes to watchlist.json. Skipping commit and push."
+            echo "No changes to watchlist or alert history. Skipping commit and push."
           else
-            git commit -m "Watchdog: Update watchlist after checks"
+            git commit -m "Watchdog: Update watchlist and alert history after checks"
             git pull --rebase origin main
             git push
           fi
