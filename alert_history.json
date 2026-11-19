@@ -1,0 +1,22 @@
+{
+    "NSE:CNX500": {
+        "symbol": "CNX500",
+        "item_type": "SECTOR",
+        "first_alert_date": "2026-11-19",
+        "last_seen_date": "2026-11-19",
+        "days_in_zone": 1,
+        "active": true,
+        "reentered_today": false,
+        "ath_target": 24573.4
+    },
+    "NSE:HONASA": {
+        "symbol": "HONASA",
+        "item_type": "STOCK",
+        "first_alert_date": "2026-11-19",
+        "last_seen_date": "2026-11-19",
+        "days_in_zone": 1,
+        "active": true,
+        "reentered_today": false,
+        "ath_target": 547.0
+    }
+}

@@ -4,8 +4,8 @@
         "tv_symbol": "NSE:HONASA",
         "yf_symbol": "HONASA.NS",
         "target": 547.0,
-        "current_price": 524.5,
-        "distance_pct": 4.11,
+        "current_price": 529.65,
+        "distance_pct": 3.17,
         "lh_date": "10-Sep-2024",
         "item_type": "STOCK"
     },
@@ -14,8 +14,8 @@
         "tv_symbol": "NSE:CNX500",
         "yf_symbol": null,
         "target": 24573.4,
-        "current_price": 23630.25,
-        "distance_pct": 3.84,
+        "current_price": 23897.15,
+        "distance_pct": 2.75,
         "lh_date": "27-Sep-2024",
         "item_type": "SECTOR"
     }
