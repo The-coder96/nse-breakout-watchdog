@@ -4,10 +4,10 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + HYBRID DISCORD ALERTS
 1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, Verified Full Fundamentals).
 2. Sectors: 1-10Y Squeezes (Mon-Fri, <= 5% Gap) + Tight Friday ATH Scan (< 1% Gap).
 3. Hybrid Alerting:
-  - Day 1 (New Entry): Full Fundamentals + Crisp HiDPI Playwright Weekly Chart.
+  - Day 1 (New Entry): Full Fundamentals + Crisp Native Playwright Weekly Chart.
   - Day 2+ / Re-entry: Compact Daily Squeeze Radar (text-only, closest to ATH first).
   - Friday Fresh ATH: Compact text list posted first (info-only).
-  - Friday Near ATH (< 1%): Full HiDPI Weekly Charts posted second for visual
+  - Friday Near ATH (< 1%): Full Native Weekly Charts posted second for visual
     price-action review (info-only, NEVER added to watchlist.json or alert_history.json).
 4. Optimization: Playwright launches ONCE only when Day 1 or Friday Near-ATH charts exist.
 5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
@@ -39,7 +39,7 @@ ALERT_HISTORY_FILE = "alert_history.json"
 CLICKABLE_RADAR_LINKS = True          # True: ticker name opens TradingView | False: pure plain text
 ALERT_RESET_DAYS = 90                 # Fresh Day 1 chart after 90 days; set to None for permanent text-only until breakout
 ENABLE_FRIDAY_MOMENTUM = True         # True: Friday Fresh/Near ATH scan (never arms watchdog) | False: disable completely
-ENABLE_FRIDAY_NEAR_ATH_CHARTS = True  # True: attach HiDPI weekly charts for Friday Near ATH (< 1%) | False: compact text
+ENABLE_FRIDAY_NEAR_ATH_CHARTS = True  # True: attach native weekly charts for Friday Near ATH (< 1%) | False: compact text
 FRIDAY_MOMENTUM_MAX_GAP_PCT = 1.0     # Strict < 1.0% cutoff for Friday Fresh/Near ATH sector scan
 
 # ==============================================================================
@@ -190,7 +190,7 @@ def automate_tv_login(page):
         send_error_to_discord(error_details, context="TradingView Login")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
-    print(f"📸 Generating crisp HiDPI weekly chart snapshot for {tv_symbol}...")
+    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
@@ -204,13 +204,16 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         except Exception:
             pass
 
-    # Clean 5Y framing on 1W candles (no extra zoom-outs that shrink candles into blur)
+    # 5Y base + 2x zoom-out keeps multi-year peaks (e.g., 2021) framed alongside current price
     try:
         page.get_by_text("5Y", exact=True).click(timeout=3000)
         page.wait_for_timeout(1500)
         page.keyboard.type("1W", delay=100)
         page.keyboard.press("Enter")
         page.wait_for_timeout(2500)
+        for _ in range(2):
+            page.keyboard.press("Control+ArrowDown")
+            page.wait_for_timeout(200)
         for _ in range(3):
             page.keyboard.press("ArrowLeft")
             page.wait_for_timeout(100)
@@ -219,8 +222,8 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
             page.keyboard.press("Control+ArrowDown")
             page.wait_for_timeout(150)
 
-    # Center click for 1280x720 viewport before triggering native chart export
-    page.mouse.click(640, 360)
+    # Center click for 1440x810 viewport before triggering native chart export
+    page.mouse.click(720, 405)
     page.wait_for_timeout(1000)
     native_success = False
 
@@ -761,8 +764,7 @@ def run_scan():
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                device_scale_factor=2,
+                viewport={"width": 1440, "height": 810},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 accept_downloads=True
             )
@@ -794,7 +796,7 @@ def run_scan():
             # 2. Daily Squeeze Radar + Friday Fresh ATH text list (posted BEFORE Near-ATH charts)
             post_text_summaries()
 
-            # 3. Friday Near ATH (< 1%) sectors with HiDPI weekly charts (info-only, never tracked)
+            # 3. Friday Near ATH (< 1%) sectors with native weekly charts (info-only, never tracked)
             for q in near_ath_chart_items:
                 try:
                     screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
