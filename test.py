@@ -2,10 +2,11 @@
 UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + HYBRID DISCORD ALERTS
 ==================================================================================
 1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, Verified Full Fundamentals).
-2. Sectors: 1-10Y Squeezes (Mon-Fri) + ATH Momentum (Fridays ONLY) (<= 5% Gap).
+2. Sectors: 1-10Y Squeezes (Mon-Fri) + Optional ATH Momentum Summary (Fridays ONLY).
 3. Hybrid Alerting:
-   - Day 1 (New Entry): Full Fundamentals + Native Playwright Weekly Chart.
-   - Day 2+ / Re-entry: Compact Daily Squeeze Radar (text-only, closest to ATH first).
+  - Day 1 (New Entry): Full Fundamentals + Crisp HiDPI Playwright Weekly Chart.
+  - Day 2+ / Re-entry: Compact Daily Squeeze Radar (text-only, closest to ATH first).
+  - Friday Momentum: Compact text summary ONLY (never added to watchlist.json).
 4. Optimization: Playwright launches ONLY when new Day 1 chart alerts exist.
 5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
 6. Execution: Silent exit on 0-candidate days (no Discord spam).
@@ -33,8 +34,9 @@ PROJECT_NAME = "NSE Breakout Watchdog"
 # HYBRID RADAR SETTINGS (EASY TOGGLES)
 # ==============================================================================
 ALERT_HISTORY_FILE = "alert_history.json"
-CLICKABLE_RADAR_LINKS = True   # True: ticker name opens TradingView | False: pure plain text
-ALERT_RESET_DAYS = 90          # Fresh Day 1 chart after 90 days; set to None for permanent text-only until breakout
+CLICKABLE_RADAR_LINKS = True    # True: ticker name opens TradingView | False: pure plain text
+ALERT_RESET_DAYS = 90           # Fresh Day 1 chart after 90 days; set to None for permanent text-only until breakout
+ENABLE_FRIDAY_MOMENTUM = True   # True: compact Friday ATH sector summary (never arms watchdog) | False: disable completely
 
 # ==============================================================================
 # SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
@@ -122,6 +124,10 @@ except Exception as e:
 def save_watchlist(qualified_items):
     watchlist = []
     for q in qualified_items:
+        # Strict safeguard: NEVER arm live watchdog with Friday momentum sectors
+        if q.get("alert_type") == "MOMENTUM":
+            continue
+
         item_data = {
             "symbol": q["symbol"],
             "tv_symbol": q["tv_symbol"],
@@ -136,7 +142,7 @@ def save_watchlist(qualified_items):
 
     with open("watchlist.json", "w") as f:
         json.dump(watchlist, f, indent=4)
-    print(f"\n[+] Saved {len(watchlist)} candidate(s) to watchlist.json for watchdog.")
+    print(f"\n[+] Saved {len(watchlist)} squeeze candidate(s) to watchlist.json for watchdog.")
 
 def automate_tv_login(page):
     if not TV_USERNAME or not TV_PASSWORD:
@@ -180,7 +186,7 @@ def automate_tv_login(page):
         send_error_to_discord(error_details, context="TradingView Login")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
-    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
+    print(f"📸 Generating crisp HiDPI weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_weekly.png"
@@ -194,22 +200,23 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         except Exception:
             pass
 
+    # Clean 5Y framing on 1W candles (no extra zoom-outs that shrink candles into blur)
     try:
         page.get_by_text("5Y", exact=True).click(timeout=3000)
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(1500)
         page.keyboard.type("1W", delay=100)
         page.keyboard.press("Enter")
-        page.wait_for_timeout(3000)
-        for _ in range(2):
-            page.keyboard.press("Control+ArrowDown")
-            page.wait_for_timeout(200)
+        page.wait_for_timeout(2500)
         for _ in range(3):
             page.keyboard.press("ArrowLeft")
             page.wait_for_timeout(100)
     except Exception:
-        pass
+        for _ in range(4):
+            page.keyboard.press("Control+ArrowDown")
+            page.wait_for_timeout(150)
 
-    page.mouse.click(960, 540)
+    # Center click for 1280x720 viewport before triggering native chart export
+    page.mouse.click(640, 360)
     page.wait_for_timeout(1000)
     native_success = False
 
@@ -243,10 +250,12 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
     if not native_success:
         try:
             page.evaluate('''
-                const rightArea = document.querySelector('[class*="layout__area--right"]');
-                if (rightArea) rightArea.style.display = 'none';
+                const leftBar = document.querySelector('[class*="layout__area--left"]'); if (leftBar) leftBar.style.display = 'none';
+                const topBar = document.querySelector('[class*="layout__area--top"]'); if (topBar) topBar.style.display = 'none';
+                const rightBar = document.querySelector('[class*="layout__area--right"]'); if (rightBar) rightBar.style.display = 'none';
+                const bottomWidget = document.querySelector('[data-name="bottom-widget-bar"]'); if (bottomWidget) bottomWidget.style.display = 'none';
             ''')
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(800)
         except Exception:
             pass
         page.screenshot(path=screenshot_path)
@@ -283,11 +292,7 @@ def send_alert_to_discord(tv_symbol, image_path, q):
             f"• EPS: ₹{eps_val:.2f}\n"
         )
     else:
-        if q.get("alert_type") == "SQUEEZE":
-            title = f"🚨 **1-10 YEAR SECTOR SQUEEZE: {q['symbol']}**"
-        else:
-            title = f"🚀 **SECTOR AT ABSOLUTE ALL-TIME HIGH: {q['symbol']}**"
-
+        title = f"🚨 **1-10 YEAR SECTOR SQUEEZE: {q['symbol']}**"
         body = (
             f"• Current Level: {q['current_price']:.2f}\n"
             f"• Absolute Max High: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
@@ -387,6 +392,46 @@ def send_daily_radar_to_discord(radar_items, item_type):
         except Exception as e:
             send_error_to_discord(f"Failed to send {label} Daily Radar: {e}", context=f"Daily Radar ({label})")
 
+def send_friday_momentum_to_discord(momentum_items):
+    if not momentum_items or not DISCORD_SECTOR_WEBHOOK:
+        return
+
+    sorted_items = sorted(momentum_items, key=lambda x: x["distance_pct"])
+    header = f"🚀 **FRIDAY ATH MOMENTUM SECTORS ({len(sorted_items)} Leading — Info Only)**\n"
+
+    lines = []
+    for idx, q in enumerate(sorted_items, start=1):
+        formatted_symbol = q["tv_symbol"].replace(":", "%3A")
+        tv_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+        name_str = f"**[{q['symbol']}](<{tv_url}>)**" if CLICKABLE_RADAR_LINKS else f"**{q['symbol']}**"
+        price_str = f"{q['current_price']:,.2f}"
+        ath_str = f"{q['lifetime_high']:,.2f}"
+        lines.append(f"{idx}. {name_str} — {price_str} | **{q['distance_pct']:.2f}% from ATH** | ATH: {ath_str}")
+
+    chunks = []
+    current_msg = header
+    for line in lines:
+        if len(current_msg) + len(line) + 1 > 1900:
+            chunks.append(current_msg.rstrip())
+            current_msg = line + "\n"
+        else:
+            current_msg += line + "\n"
+    if current_msg.strip():
+        chunks.append(current_msg.rstrip())
+
+    for msg in chunks:
+        try:
+            res = requests.post(DISCORD_SECTOR_WEBHOOK, json={"content": msg}, timeout=15)
+            if res.status_code in [200, 204]:
+                print(f"[+] Sent Friday ATH Momentum summary ({len(sorted_items)} sector(s)).")
+            else:
+                send_error_to_discord(
+                    f"Friday Momentum webhook returned {res.status_code}: {res.text}",
+                    context="Friday Sector Momentum"
+                )
+        except Exception as e:
+            send_error_to_discord(f"Failed to send Friday Momentum summary: {e}", context="Friday Sector Momentum")
+
 def tv_to_yf(tv_symbol):
     return f"{tv_symbol.split(':')[-1].strip().replace('_', '-')}.NS"
 
@@ -465,9 +510,12 @@ def analyze_sector(idx, df, is_friday):
 
     is_multi_year = (1.0 <= age_years <= 10.0) and not (df.loc[lh_idx:]["Close"] > lifetime_high).any()
 
-    if is_multi_year: alert_type = "SQUEEZE"
-    elif not is_multi_year and is_friday: alert_type = "MOMENTUM"
-    else: return None
+    if is_multi_year:
+        alert_type = "SQUEEZE"
+    elif not is_multi_year and is_friday and ENABLE_FRIDAY_MOMENTUM:
+        alert_type = "MOMENTUM"
+    else:
+        return None
 
     return {
         "symbol": idx["name"], "tv_symbol": idx["tv"], "current_price": current_price,
@@ -477,7 +525,8 @@ def analyze_sector(idx, df, is_friday):
     }
 
 def run_scan():
-    all_qualified = []
+    all_qualified = []            # True multi-year squeezes ONLY (stocks + 1-10Y squeeze sectors)
+    friday_momentum_sectors = []  # Info-only Friday ATH leaders (never saved to watchlist/history)
     today_date = datetime.now(tz=IST).date()
     today_str = today_date.strftime("%Y-%m-%d")
     history = load_alert_history()
@@ -507,11 +556,15 @@ def run_scan():
                 if df is not None and not df.empty:
                     df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close'}, inplace=True)
                     res = analyze_sector(idx, df, is_friday)
-                    if res: all_qualified.append(res)
+                    if res:
+                        if res.get("alert_type") == "MOMENTUM":
+                            friday_momentum_sectors.append(res)
+                        else:
+                            all_qualified.append(res)
             except Exception:
                 pass
 
-    # Partition qualified candidates into Day 1 (Full Chart) vs Day 2+/Re-entry (Compact Radar)
+    # Partition true squeeze candidates into Day 1 (Full Chart) vs Day 2+/Re-entry (Compact Radar)
     qualified_keys = set()
     new_full_alerts = []
     radar_stocks = []
@@ -583,7 +636,7 @@ def run_scan():
     for key in expired_keys:
         del history[key]
 
-    # 1. Process brand-new Day 1 alerts (Playwright launches ONLY if needed)
+    # 1. Process brand-new Day 1 squeeze alerts (Playwright launches ONLY if needed)
     if new_full_alerts:
         print(f"\n[!] Initializing Visual Engine for {len(new_full_alerts)} NEW Day 1 item(s)...")
         with sync_playwright() as p:
@@ -592,7 +645,8 @@ def run_scan():
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
+                viewport={"width": 1280, "height": 720},
+                device_scale_factor=2,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 accept_downloads=True
             )
@@ -624,14 +678,18 @@ def run_scan():
     else:
         print("\n[*] No new Day 1 entries today. Skipping Playwright visual engine.")
 
-    # 2. Send compact Daily Squeeze Radar for ongoing / re-entered items
+    # 2. Send compact Daily Squeeze Radar for ongoing / re-entered squeezes
     if radar_stocks:
         send_daily_radar_to_discord(radar_stocks, "STOCK")
     if radar_sectors:
         send_daily_radar_to_discord(radar_sectors, "SECTOR")
 
-    # 3. Always update watchlist.json and alert_history.json
-    if not all_qualified:
+    # 3. On Fridays only, send compact info-only summary for ATH momentum sectors
+    if friday_momentum_sectors:
+        send_friday_momentum_to_discord(friday_momentum_sectors)
+
+    # 4. Always update watchlist.json and alert_history.json (true squeezes ONLY)
+    if not all_qualified and not friday_momentum_sectors:
         print("\n0 Stocks and 0 Sectors met criteria today. Silent exit (no Discord post).")
 
     save_watchlist(all_qualified)
