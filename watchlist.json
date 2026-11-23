@@ -1,11 +1,21 @@
 [
     {
+        "symbol": "LALPATHLAB",
+        "tv_symbol": "NSE:LALPATHLAB",
+        "yf_symbol": "LALPATHLAB.NS",
+        "target": 2122.75,
+        "current_price": 2040.5,
+        "distance_pct": 3.87,
+        "lh_date": "15-Sep-2021",
+        "item_type": "STOCK"
+    },
+    {
         "symbol": "HONASA",
         "tv_symbol": "NSE:HONASA",
         "yf_symbol": "HONASA.NS",
         "target": 547.0,
-        "current_price": 525.4,
-        "distance_pct": 3.95,
+        "current_price": 539.75,
+        "distance_pct": 1.33,
         "lh_date": "10-Sep-2024",
         "item_type": "STOCK"
     },
@@ -14,8 +24,8 @@
         "tv_symbol": "NSE:CNX500",
         "yf_symbol": null,
         "target": 24573.4,
-        "current_price": 24088.8,
-        "distance_pct": 1.97,
+        "current_price": 23748.15,
+        "distance_pct": 3.36,
         "lh_date": "27-Sep-2024",
         "item_type": "SECTOR"
     }
