@@ -4,8 +4,9 @@ LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 Reads watchlist.json and checks live prices.
 If a Stock OR Sector crosses its multi-year ATH:
 1. Launches Playwright (only on trigger) and logs into TradingView.
-2. Captures the native TradingView chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
+2. Captures a crisp HiDPI TradingView 1W chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
 3. Sends the alert + attached PNG chart + clean embed-free link to the routed Discord webhook.
+4. Clears triggered symbols from both watchlist.json and alert_history.json.
 """
 
 import os
@@ -30,6 +31,7 @@ DISCORD_BUG_WEBHOOK = os.environ.get("DISCORD_BUG_WEBHOOK")
 TV_USERNAME = os.environ.get("TV_USERNAME")
 TV_PASSWORD = os.environ.get("TV_PASSWORD")
 WATCHLIST_FILE = "watchlist.json"
+ALERT_HISTORY_FILE = "alert_history.json"
 
 # ==============================================================================
 # 🚨 DISCORD UNIVERSAL ERROR REPORTER
@@ -50,6 +52,34 @@ def send_error_to_discord(error_msg, context="Watchdog"):
         requests.post(DISCORD_BUG_WEBHOOK, json={"content": discord_message}, timeout=10)
     except Exception as e:
         print(f"[-] Failed to push bug report to Discord: {e}")
+
+# ==============================================================================
+# ALERT HISTORY CLEANUP ON LIVE BREAKOUT
+# ==============================================================================
+def clear_from_alert_history(tv_symbols):
+    if not tv_symbols or not os.path.exists(ALERT_HISTORY_FILE):
+        return
+
+    try:
+        with open(ALERT_HISTORY_FILE, "r") as f:
+            history = json.load(f)
+
+        if not isinstance(history, dict):
+            return
+
+        removed = []
+        for tv_sym in tv_symbols:
+            if tv_sym in history:
+                del history[tv_sym]
+                removed.append(tv_sym)
+
+        if removed:
+            with open(ALERT_HISTORY_FILE, "w") as f:
+                json.dump(history, f, indent=4)
+            print(f"[+] Cleared {len(removed)} broken-out symbol(s) from {ALERT_HISTORY_FILE}: {', '.join(removed)}")
+    except Exception as e:
+        print(f"[-] Failed to update {ALERT_HISTORY_FILE}: {e}")
+        send_error_to_discord(traceback.format_exc(), context="Updating alert_history.json")
 
 try:
     tv = TvDatafeed()
@@ -102,7 +132,7 @@ def automate_tv_login(page):
         send_error_to_discord(error_details, context="Watchdog TV Login")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
-    print(f"📸 Generating chart snapshot for {tv_symbol}...")
+    print(f"📸 Generating crisp HiDPI weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_breakout.png"
@@ -116,22 +146,23 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         except Exception:
             pass
 
+    # Clean 5Y framing on 1W candles (no extra zoom-outs that shrink candles into blur)
     try:
         page.get_by_text("5Y", exact=True).click(timeout=3000)
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(1500)
         page.keyboard.type("1W", delay=100)
         page.keyboard.press("Enter")
-        page.wait_for_timeout(3000)
-        for _ in range(2):
-            page.keyboard.press("Control+ArrowDown")
-            page.wait_for_timeout(200)
+        page.wait_for_timeout(2500)
         for _ in range(3):
             page.keyboard.press("ArrowLeft")
             page.wait_for_timeout(100)
     except Exception:
-        pass
+        for _ in range(4):
+            page.keyboard.press("Control+ArrowDown")
+            page.wait_for_timeout(150)
 
-    page.mouse.click(960, 540)
+    # Center click for 1280x720 viewport before triggering native chart export
+    page.mouse.click(640, 360)
     page.wait_for_timeout(1000)
     native_success = False
 
@@ -173,7 +204,7 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
                 const rightBar = document.querySelector('[class*="layout__area--right"]'); if (rightBar) rightBar.style.display = 'none';
                 const bottomWidget = document.querySelector('[data-name="bottom-widget-bar"]'); if (bottomWidget) bottomWidget.style.display = 'none';
             ''')
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(800)
         except Exception:
             pass
         page.screenshot(path=screenshot_path)
@@ -317,7 +348,8 @@ def main():
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
+                viewport={"width": 1280, "height": 720},
+                device_scale_factor=2,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 accept_downloads=True
             )
@@ -337,6 +369,8 @@ def main():
                 send_alert(item, live_price, screenshot_path)
 
             browser.close()
+
+        clear_from_alert_history([item.get("tv_symbol") for item, _ in triggered_items if item.get("tv_symbol")])
 
     # Overwrite watchlist, dropping only the items that triggered an alert
     try:
