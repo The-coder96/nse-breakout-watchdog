@@ -20,16 +20,6 @@
         "item_type": "SECTOR"
     },
     {
-        "symbol": "BANKNIFTY",
-        "tv_symbol": "NSE:BANKNIFTY",
-        "yf_symbol": null,
-        "target": 64680.8,
-        "current_price": 64635.2,
-        "distance_pct": 0.07,
-        "lh_date": "20-Nov-2026",
-        "item_type": "SECTOR"
-    },
-    {
         "symbol": "SENSEX",
         "tv_symbol": "BSE:SENSEX",
         "yf_symbol": null,
@@ -97,36 +87,6 @@
         "current_price": 9689.4,
         "distance_pct": 1.05,
         "lh_date": "05-Jan-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXFINANCE",
-        "tv_symbol": "NSE:CNXFINANCE",
-        "yf_symbol": null,
-        "target": 28899.3,
-        "current_price": 28871.2,
-        "distance_pct": 0.1,
-        "lh_date": "20-Nov-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "CNXPSUBANK",
-        "tv_symbol": "NSE:CNXPSUBANK",
-        "yf_symbol": null,
-        "target": 9918.65,
-        "current_price": 9881.05,
-        "distance_pct": 0.38,
-        "lh_date": "26-Feb-2026",
-        "item_type": "SECTOR"
-    },
-    {
-        "symbol": "NIFTYPVTBANK",
-        "tv_symbol": "NSE:NIFTYPVTBANK",
-        "yf_symbol": null,
-        "target": 31681.55,
-        "current_price": 31671.75,
-        "distance_pct": 0.03,
-        "lh_date": "20-Nov-2026",
         "item_type": "SECTOR"
     },
     {
