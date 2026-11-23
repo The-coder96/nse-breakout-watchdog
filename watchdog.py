@@ -4,7 +4,7 @@ LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 Reads watchlist.json and checks live prices.
 If a Stock OR Sector crosses its multi-year ATH:
 1. Launches Playwright (only on trigger) and logs into TradingView.
-2. Captures a crisp HiDPI TradingView 1W chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
+2. Captures a crisp native TradingView 1W chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
 3. Sends the alert + attached PNG chart + clean embed-free link to the routed Discord webhook.
 4. Clears triggered symbols from both watchlist.json and alert_history.json.
 """
@@ -132,7 +132,7 @@ def automate_tv_login(page):
         send_error_to_discord(error_details, context="Watchdog TV Login")
 
 def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
-    print(f"📸 Generating crisp HiDPI weekly chart snapshot for {tv_symbol}...")
+    print(f"📸 Generating weekly chart snapshot for {tv_symbol}...")
     formatted_symbol = tv_symbol.replace(":", "%3A")
     url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval={timeframe}&theme=light"
     screenshot_path = f"{tv_symbol.replace(':', '_')}_breakout.png"
@@ -146,13 +146,16 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
         except Exception:
             pass
 
-    # Clean 5Y framing on 1W candles (no extra zoom-outs that shrink candles into blur)
+    # 5Y base + 2x zoom-out keeps multi-year peaks (e.g., 2021) framed alongside current price
     try:
         page.get_by_text("5Y", exact=True).click(timeout=3000)
         page.wait_for_timeout(1500)
         page.keyboard.type("1W", delay=100)
         page.keyboard.press("Enter")
         page.wait_for_timeout(2500)
+        for _ in range(2):
+            page.keyboard.press("Control+ArrowDown")
+            page.wait_for_timeout(200)
         for _ in range(3):
             page.keyboard.press("ArrowLeft")
             page.wait_for_timeout(100)
@@ -161,8 +164,8 @@ def capture_breakout_chart(page, tv_symbol, timeframe="1W"):
             page.keyboard.press("Control+ArrowDown")
             page.wait_for_timeout(150)
 
-    # Center click for 1280x720 viewport before triggering native chart export
-    page.mouse.click(640, 360)
+    # Center click for 1440x810 viewport before triggering native chart export
+    page.mouse.click(720, 405)
     page.wait_for_timeout(1000)
     native_success = False
 
@@ -348,8 +351,7 @@ def main():
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                device_scale_factor=2,
+                viewport={"width": 1440, "height": 810},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 accept_downloads=True
             )
