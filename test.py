@@ -2,12 +2,14 @@
 UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + HYBRID DISCORD ALERTS
 ==================================================================================
 1. Stocks: Multi-Year Breakout (2Y+ Age, <= 5% Gap, Verified Full Fundamentals).
-2. Sectors: 1-10Y Squeezes (Mon-Fri) + Optional ATH Momentum Summary (Fridays ONLY).
+2. Sectors: 1-10Y Squeezes (Mon-Fri, <= 5% Gap) + Tight Friday ATH Scan (< 1% Gap).
 3. Hybrid Alerting:
   - Day 1 (New Entry): Full Fundamentals + Crisp HiDPI Playwright Weekly Chart.
   - Day 2+ / Re-entry: Compact Daily Squeeze Radar (text-only, closest to ATH first).
-  - Friday Momentum: Compact text summary ONLY (never added to watchlist.json).
-4. Optimization: Playwright launches ONLY when new Day 1 chart alerts exist.
+  - Friday Fresh ATH: Compact text list posted first (info-only).
+  - Friday Near ATH (< 1%): Full HiDPI Weekly Charts posted second for visual
+    price-action review (info-only, NEVER added to watchlist.json or alert_history.json).
+4. Optimization: Playwright launches ONCE only when Day 1 or Friday Near-ATH charts exist.
 5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
 6. Execution: Silent exit on 0-candidate days (no Discord spam).
 """
@@ -34,9 +36,11 @@ PROJECT_NAME = "NSE Breakout Watchdog"
 # HYBRID RADAR SETTINGS (EASY TOGGLES)
 # ==============================================================================
 ALERT_HISTORY_FILE = "alert_history.json"
-CLICKABLE_RADAR_LINKS = True    # True: ticker name opens TradingView | False: pure plain text
-ALERT_RESET_DAYS = 90           # Fresh Day 1 chart after 90 days; set to None for permanent text-only until breakout
-ENABLE_FRIDAY_MOMENTUM = True   # True: compact Friday ATH sector summary (never arms watchdog) | False: disable completely
+CLICKABLE_RADAR_LINKS = True          # True: ticker name opens TradingView | False: pure plain text
+ALERT_RESET_DAYS = 90                 # Fresh Day 1 chart after 90 days; set to None for permanent text-only until breakout
+ENABLE_FRIDAY_MOMENTUM = True         # True: Friday Fresh/Near ATH scan (never arms watchdog) | False: disable completely
+ENABLE_FRIDAY_NEAR_ATH_CHARTS = True  # True: attach HiDPI weekly charts for Friday Near ATH (< 1%) | False: compact text
+FRIDAY_MOMENTUM_MAX_GAP_PCT = 1.0     # Strict < 1.0% cutoff for Friday Fresh/Near ATH sector scan
 
 # ==============================================================================
 # SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
@@ -392,24 +396,12 @@ def send_daily_radar_to_discord(radar_items, item_type):
         except Exception as e:
             send_error_to_discord(f"Failed to send {label} Daily Radar: {e}", context=f"Daily Radar ({label})")
 
-def send_friday_momentum_to_discord(momentum_items):
-    if not momentum_items or not DISCORD_SECTOR_WEBHOOK:
+def post_chunked_text(webhook_url, lines, context_label):
+    if not webhook_url or not lines:
         return
 
-    sorted_items = sorted(momentum_items, key=lambda x: x["distance_pct"])
-    header = f"🚀 **FRIDAY ATH MOMENTUM SECTORS ({len(sorted_items)} Leading — Info Only)**\n"
-
-    lines = []
-    for idx, q in enumerate(sorted_items, start=1):
-        formatted_symbol = q["tv_symbol"].replace(":", "%3A")
-        tv_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
-        name_str = f"**[{q['symbol']}](<{tv_url}>)**" if CLICKABLE_RADAR_LINKS else f"**{q['symbol']}**"
-        price_str = f"{q['current_price']:,.2f}"
-        ath_str = f"{q['lifetime_high']:,.2f}"
-        lines.append(f"{idx}. {name_str} — {price_str} | **{q['distance_pct']:.2f}% from ATH** | ATH: {ath_str}")
-
     chunks = []
-    current_msg = header
+    current_msg = ""
     for line in lines:
         if len(current_msg) + len(line) + 1 > 1900:
             chunks.append(current_msg.rstrip())
@@ -421,16 +413,99 @@ def send_friday_momentum_to_discord(momentum_items):
 
     for msg in chunks:
         try:
-            res = requests.post(DISCORD_SECTOR_WEBHOOK, json={"content": msg}, timeout=15)
-            if res.status_code in [200, 204]:
-                print(f"[+] Sent Friday ATH Momentum summary ({len(sorted_items)} sector(s)).")
-            else:
+            res = requests.post(webhook_url, json={"content": msg}, timeout=15)
+            if res.status_code not in [200, 204]:
                 send_error_to_discord(
-                    f"Friday Momentum webhook returned {res.status_code}: {res.text}",
-                    context="Friday Sector Momentum"
+                    f"{context_label} webhook returned {res.status_code}: {res.text}",
+                    context=context_label
                 )
         except Exception as e:
-            send_error_to_discord(f"Failed to send Friday Momentum summary: {e}", context="Friday Sector Momentum")
+            send_error_to_discord(f"Failed to send {context_label}: {e}", context=context_label)
+
+def send_friday_fresh_ath_to_discord(fresh_ath_items):
+    if not fresh_ath_items or not DISCORD_SECTOR_WEBHOOK:
+        return
+
+    lines = [f"🔥 **SECTOR AT / FRESH ALL-TIME HIGH ({len(fresh_ath_items)}) — Info Only**"]
+    for idx, q in enumerate(fresh_ath_items, start=1):
+        formatted_symbol = q["tv_symbol"].replace(":", "%3A")
+        tv_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+        name_str = f"**[{q['symbol']}](<{tv_url}>)**" if CLICKABLE_RADAR_LINKS else f"**{q['symbol']}**"
+        price_str = f"{q['current_price']:,.2f}"
+        ath_str = f"{q['lifetime_high']:,.2f}"
+        if q["distance_pct"] <= 0.05:
+            lines.append(f"{idx}. {name_str} — {price_str} | **Fresh ATH** (High: {ath_str})")
+        else:
+            lines.append(f"{idx}. {name_str} — {price_str} | **Fresh ATH** ({q['distance_pct']:.2f}% off intraday high: {ath_str})")
+
+    post_chunked_text(DISCORD_SECTOR_WEBHOOK, lines, "Friday Fresh ATH Sectors")
+    print(f"[+] Sent Friday Fresh ATH text list ({len(fresh_ath_items)} sector(s)).")
+
+def send_friday_near_ath_text_to_discord(near_ath_items):
+    if not near_ath_items or not DISCORD_SECTOR_WEBHOOK:
+        return
+
+    lines = [f"📈 **SECTOR NEAR ALL-TIME HIGH (< {FRIDAY_MOMENTUM_MAX_GAP_PCT:g}% Away) ({len(near_ath_items)}) — Info Only**"]
+    for idx, q in enumerate(near_ath_items, start=1):
+        formatted_symbol = q["tv_symbol"].replace(":", "%3A")
+        tv_url = f"https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W"
+        name_str = f"**[{q['symbol']}](<{tv_url}>)**" if CLICKABLE_RADAR_LINKS else f"**{q['symbol']}**"
+        price_str = f"{q['current_price']:,.2f}"
+        ath_str = f"{q['lifetime_high']:,.2f}"
+        lines.append(f"{idx}. {name_str} — {price_str} | **{q['distance_pct']:.2f}% away** | ATH: {ath_str} (Hit: {q['lh_date']})")
+
+    post_chunked_text(DISCORD_SECTOR_WEBHOOK, lines, "Friday Near ATH Sectors")
+    print(f"[+] Sent Friday Near ATH text list ({len(near_ath_items)} sector(s)).")
+
+def send_friday_near_ath_chart_to_discord(tv_symbol, image_path, q):
+    if not DISCORD_SECTOR_WEBHOOK:
+        if os.path.exists(image_path):
+            os.remove(image_path)
+        return False
+
+    formatted_symbol = tv_symbol.replace(":", "%3A")
+    tv_link = f"<https://www.tradingview.com/chart/?symbol={formatted_symbol}&interval=1W>"
+
+    title = f"📈 **SECTOR NEAR ALL-TIME HIGH (< {FRIDAY_MOMENTUM_MAX_GAP_PCT:g}%): {q['symbol']}**"
+    body = (
+        f"• Current Level: {q['current_price']:.2f}\n"
+        f"• Absolute Max High: {q['lifetime_high']:.2f} (Hit: {q['lh_date']})\n"
+        f"• Ceiling Age: {q['age_years']:.2f} Y\n"
+        f"• Distance to ATH: {q['distance_pct']:.2f}%\n"
+        f"• Mode: Friday Visual Scan (Info Only)\n"
+    )
+
+    sent_ok = False
+    try:
+        with open(image_path, "rb") as f:
+            files = {"file": (os.path.basename(image_path), f, "image/png")}
+            payload = {
+                "content": (
+                    f"{title}\n\n"
+                    f"**TECHNICAL**\n{body}\n"
+                    f"**CHART**\n*Attached: Weekly (1W) timeframe chart.*\n\n"
+                    f"📊 **Interactive Chart:** {tv_link}"
+                )
+            }
+            res = requests.post(DISCORD_SECTOR_WEBHOOK, data=payload, files=files, timeout=25)
+            if res.status_code in [200, 204]:
+                sent_ok = True
+                print(f"[+] Sent Friday Near ATH chart alert for {q['symbol']}")
+            else:
+                send_error_to_discord(
+                    f"Webhook returned status {res.status_code} for {q['symbol']}: {res.text}",
+                    context="Friday Near ATH Chart Delivery"
+                )
+    except Exception as e:
+        send_error_to_discord(
+            f"Failed to post Friday Near ATH chart for {q['symbol']}: {e}",
+            context="Friday Near ATH Chart Delivery"
+        )
+    finally:
+        if os.path.exists(image_path):
+            os.remove(image_path)
+
+    return sent_ok
 
 def tv_to_yf(tv_symbol):
     return f"{tv_symbol.split(':')[-1].strip().replace('_', '-')}.NS"
@@ -498,6 +573,7 @@ def analyze_stock(c, df):
 def analyze_sector(idx, df, is_friday):
     if df is None or len(df) < 250: return None
     today = datetime.now(tz=IST).date()
+    last_bar_date = df.index[-1].date()
 
     current_price = float(df["Close"].iloc[-1])
     lifetime_high = float(df["High"].max())
@@ -505,28 +581,42 @@ def analyze_sector(idx, df, is_friday):
     age_years = (today - lh_idx.date()).days / 365.25
     distance_pct = ((lifetime_high - current_price) / lifetime_high) * 100.0
 
-    # 5.00% Limit for Sectors
+    # 5.00% outer limit for multi-year squeezes
     if not (0.00 <= distance_pct <= 5.00): return None
 
     is_multi_year = (1.0 <= age_years <= 10.0) and not (df.loc[lh_idx:]["Close"] > lifetime_high).any()
 
     if is_multi_year:
         alert_type = "SQUEEZE"
-    elif not is_multi_year and is_friday and ENABLE_FRIDAY_MOMENTUM:
+        momentum_tier = None
+    elif (
+        age_years < 1.0
+        and is_friday
+        and ENABLE_FRIDAY_MOMENTUM
+        and distance_pct < FRIDAY_MOMENTUM_MAX_GAP_PCT
+    ):
         alert_type = "MOMENTUM"
+        is_fresh_ath = (lh_idx.date() == last_bar_date) or (distance_pct <= 0.10)
+        momentum_tier = "FRESH_ATH" if is_fresh_ath else "NEAR_ATH"
     else:
         return None
 
     return {
-        "symbol": idx["name"], "tv_symbol": idx["tv"], "current_price": current_price,
-        "lifetime_high": lifetime_high, "lh_date": lh_idx.date().strftime("%d-%b-%Y"),
-        "age_years": age_years, "distance_pct": distance_pct,
-        "item_type": "SECTOR", "alert_type": alert_type
+        "symbol": idx["name"],
+        "tv_symbol": idx["tv"],
+        "current_price": current_price,
+        "lifetime_high": lifetime_high,
+        "lh_date": lh_idx.date().strftime("%d-%b-%Y"),
+        "age_years": age_years,
+        "distance_pct": distance_pct,
+        "item_type": "SECTOR",
+        "alert_type": alert_type,
+        "momentum_tier": momentum_tier
     }
 
 def run_scan():
     all_qualified = []            # True multi-year squeezes ONLY (stocks + 1-10Y squeeze sectors)
-    friday_momentum_sectors = []  # Info-only Friday ATH leaders (never saved to watchlist/history)
+    friday_momentum_sectors = []  # Info-only Friday ATH leaders (< 1% gap; never saved to watchlist/history)
     today_date = datetime.now(tz=IST).date()
     today_str = today_date.strftime("%Y-%m-%d")
     history = load_alert_history()
@@ -636,9 +726,35 @@ def run_scan():
     for key in expired_keys:
         del history[key]
 
-    # 1. Process brand-new Day 1 squeeze alerts (Playwright launches ONLY if needed)
-    if new_full_alerts:
-        print(f"\n[!] Initializing Visual Engine for {len(new_full_alerts)} NEW Day 1 item(s)...")
+    # Split Friday momentum sectors into ordered tiers: Fresh ATH first, Near ATH (< 1%) second
+    friday_fresh_ath = sorted(
+        [q for q in friday_momentum_sectors if q.get("momentum_tier") == "FRESH_ATH"],
+        key=lambda x: x["distance_pct"]
+    )
+    friday_near_ath = sorted(
+        [q for q in friday_momentum_sectors if q.get("momentum_tier") == "NEAR_ATH"],
+        key=lambda x: x["distance_pct"]
+    )
+
+    def post_text_summaries():
+        if radar_stocks:
+            send_daily_radar_to_discord(radar_stocks, "STOCK")
+        if radar_sectors:
+            send_daily_radar_to_discord(radar_sectors, "SECTOR")
+        if friday_fresh_ath:
+            send_friday_fresh_ath_to_discord(friday_fresh_ath)
+        if friday_near_ath and not ENABLE_FRIDAY_NEAR_ATH_CHARTS:
+            send_friday_near_ath_text_to_discord(friday_near_ath)
+
+    near_ath_chart_items = friday_near_ath if ENABLE_FRIDAY_NEAR_ATH_CHARTS else []
+    total_chart_jobs = len(new_full_alerts) + len(near_ath_chart_items)
+
+    # Launch Playwright ONCE only if Day 1 squeezes or Friday Near-ATH charts need rendering
+    if total_chart_jobs > 0:
+        print(
+            f"\n[!] Initializing Visual Engine for {len(new_full_alerts)} Day 1 squeeze(s) "
+            f"and {len(near_ath_chart_items)} Friday Near-ATH sector(s)..."
+        )
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
@@ -654,6 +770,7 @@ def run_scan():
 
             automate_tv_login(page)
 
+            # 1. Day 1 multi-year squeezes (full chart + recorded in alert_history.json)
             for q in new_full_alerts:
                 try:
                     screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
@@ -674,19 +791,23 @@ def run_scan():
                     print(f"[-] Failed to generate or send chart for {q['symbol']}: {e}")
                     send_error_to_discord(error_trace, context=f"Chart Snapshot ({q['symbol']})")
 
+            # 2. Daily Squeeze Radar + Friday Fresh ATH text list (posted BEFORE Near-ATH charts)
+            post_text_summaries()
+
+            # 3. Friday Near ATH (< 1%) sectors with HiDPI weekly charts (info-only, never tracked)
+            for q in near_ath_chart_items:
+                try:
+                    screenshot_path = capture_breakout_chart(page, q['tv_symbol'], timeframe="1W")
+                    send_friday_near_ath_chart_to_discord(q['tv_symbol'], screenshot_path, q)
+                except Exception as e:
+                    error_trace = traceback.format_exc()
+                    print(f"[-] Failed to generate or send Friday Near-ATH chart for {q['symbol']}: {e}")
+                    send_error_to_discord(error_trace, context=f"Friday Near ATH Chart ({q['symbol']})")
+
             browser.close()
     else:
-        print("\n[*] No new Day 1 entries today. Skipping Playwright visual engine.")
-
-    # 2. Send compact Daily Squeeze Radar for ongoing / re-entered squeezes
-    if radar_stocks:
-        send_daily_radar_to_discord(radar_stocks, "STOCK")
-    if radar_sectors:
-        send_daily_radar_to_discord(radar_sectors, "SECTOR")
-
-    # 3. On Fridays only, send compact info-only summary for ATH momentum sectors
-    if friday_momentum_sectors:
-        send_friday_momentum_to_discord(friday_momentum_sectors)
+        print("\n[*] No chart alerts needed today. Skipping Playwright visual engine.")
+        post_text_summaries()
 
     # 4. Always update watchlist.json and alert_history.json (true squeezes ONLY)
     if not all_qualified and not friday_momentum_sectors:
