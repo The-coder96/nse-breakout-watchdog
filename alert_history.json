@@ -9,16 +9,6 @@
         "reentered_today": false,
         "ath_target": 24573.4
     },
-    "NSE:HONASA": {
-        "symbol": "HONASA",
-        "item_type": "STOCK",
-        "first_alert_date": "2026-11-19",
-        "last_seen_date": "2026-11-24",
-        "days_in_zone": 4,
-        "active": true,
-        "reentered_today": false,
-        "ath_target": 547.0
-    },
     "NSE:LALPATHLAB": {
         "symbol": "LALPATHLAB",
         "item_type": "STOCK",
