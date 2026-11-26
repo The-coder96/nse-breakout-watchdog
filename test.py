@@ -9,9 +9,10 @@ UNIFIED BREAKOUT SCANNER (STOCKS & SECTORS) + HYBRID DISCORD ALERTS
   - Friday Fresh ATH: Compact text list posted first (info-only).
   - Friday Near ATH (< 1%): Full Native Weekly Charts posted second for visual
     price-action review (info-only, NEVER added to watchlist.json or alert_history.json).
-4. Optimization: Playwright launches ONCE only when Day 1 or Friday Near-ATH charts exist.
-5. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
-6. Execution: Silent exit on 0-candidate days (no Discord spam).
+4. Holiday Shield: Silent exit on weekends & Indian market holidays (XBOM calendar).
+5. Optimization: Playwright launches ONCE only when Day 1 or Friday Near-ATH charts exist.
+6. Error Shield: Universal Bug Reporter routed to DISCORD_BUG_WEBHOOK.
+7. Execution: Silent exit on 0-candidate days (no Discord spam).
 """
 
 import os
@@ -28,12 +29,22 @@ from tradingview_screener import Query, col
 from tvDatafeed import TvDatafeed, Interval
 from playwright.sync_api import sync_playwright
 
+try:
+    import exchange_calendars as xcals
+except ImportError:
+    xcals = None
+
+try:
+    import holidays
+except ImportError:
+    holidays = None
+
 warnings.filterwarnings("ignore")
 IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 PROJECT_NAME = "NSE Breakout Watchdog"
 
 # ==============================================================================
-# HYBRID RADAR SETTINGS (EASY TOGGLES)
+# HYBRID RADAR & HOLIDAY SETTINGS (EASY TOGGLES)
 # ==============================================================================
 ALERT_HISTORY_FILE = "alert_history.json"
 CLICKABLE_RADAR_LINKS = True          # True: ticker name opens TradingView | False: pure plain text
@@ -41,6 +52,8 @@ ALERT_RESET_DAYS = 90                 # Fresh Day 1 chart after 90 days; set to 
 ENABLE_FRIDAY_MOMENTUM = True         # True: Friday Fresh/Near ATH scan (never arms watchdog) | False: disable completely
 ENABLE_FRIDAY_NEAR_ATH_CHARTS = True  # True: attach native weekly charts for Friday Near ATH (< 1%) | False: compact text
 FRIDAY_MOMENTUM_MAX_GAP_PCT = 1.0     # Strict < 1.0% cutoff for Friday Fresh/Near ATH sector scan
+ENABLE_HOLIDAY_INTERCEPTOR = True     # True: exit silently on weekends & NSE/BSE holidays | False: bypass for manual testing
+EXTRA_NSE_HOLIDAYS = set()            # Optional ad-hoc closures in "YYYY-MM-DD" format, e.g. {"2026-01-15"}
 
 # ==============================================================================
 # SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
@@ -73,6 +86,44 @@ def send_error_to_discord(error_msg, context=""):
         requests.post(DISCORD_BUG_WEBHOOK, json={"content": discord_message}, timeout=10)
     except Exception as e:
         print(f"[-] Failed to push bug report to Discord: {e}")
+
+# ==============================================================================
+# 📅 INDIAN STOCK MARKET HOLIDAY INTERCEPTOR
+# ==============================================================================
+def get_indian_market_status(date_str):
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+    if date_obj.weekday() >= 5:
+        return {"is_weekend": True, "is_open": False, "reason": "Weekend"}
+
+    if date_str in EXTRA_NSE_HOLIDAYS:
+        return {"is_weekend": False, "is_open": False, "reason": "a custom NSE holiday override"}
+
+    if xcals is None:
+        msg = "Missing dependency: 'exchange-calendars' is not installed. Skipping holiday check."
+        print(f"⚠️ {msg}")
+        send_error_to_discord(msg, context="Holiday Interceptor")
+        return {"is_weekend": False, "is_open": True, "reason": None}
+
+    try:
+        in_cal = xcals.get_calendar("XBOM")
+        in_open = bool(in_cal.is_session(date_str))
+    except Exception:
+        send_error_to_discord(traceback.format_exc(), context="Holiday Interceptor (XBOM)")
+        return {"is_weekend": False, "is_open": True, "reason": None}
+
+    in_reason = "an Indian market holiday"
+    if not in_open and holidays is not None:
+        try:
+            in_holidays = holidays.country_holidays("IN", subdiv="MH")
+            in_reason = in_holidays.get(date_obj) or "an Indian market holiday"
+        except Exception:
+            pass
+
+    return {
+        "is_weekend": False,
+        "is_open": in_open,
+        "reason": in_reason
+    }
 
 # ==============================================================================
 # ALERT HISTORY MEMORY MANAGEMENT
@@ -118,12 +169,6 @@ SECTOR_INDICES = [
     {"name": "NIFTY_RURAL", "tv": "NSE:NIFTY_RURAL"}, {"name": "NIFTY_EV", "tv": "NSE:NIFTY_EV"},
     {"name": "NIFTY_CONSR_DURBL", "tv": "NSE:NIFTY_CONSR_DURBL"}
 ]
-
-try:
-    tv = TvDatafeed()
-except Exception as e:
-    print(f"[-] Failed to initialize TradingView feed: {e}")
-    tv = None
 
 def save_watchlist(qualified_items):
     watchlist = []
@@ -624,6 +669,12 @@ def run_scan():
     today_str = today_date.strftime("%Y-%m-%d")
     history = load_alert_history()
 
+    try:
+        tv = TvDatafeed()
+    except Exception as e:
+        print(f"[-] Failed to initialize TradingView feed: {e}")
+        tv = None
+
     print("\n[Pass 1] Scanning Top 500 NSE stocks by Market Cap...")
     stock_cands = fetch_tv_candidates(500)
     for c in stock_cands:
@@ -820,7 +871,21 @@ def run_scan():
 
 if __name__ == "__main__":
     try:
+        if ENABLE_HOLIDAY_INTERCEPTOR:
+            today_str = datetime.now(tz=IST).strftime("%Y-%m-%d")
+            status = get_indian_market_status(today_str)
+
+            if status["is_weekend"]:
+                print(f"Today ({today_str}) is a weekend. Exiting silently.")
+                sys.exit(0)
+
+            if not status["is_open"]:
+                print(f"Indian Market Holiday Detected ({today_str}): {status['reason']}. Exiting silently.")
+                sys.exit(0)
+
         run_scan()
+    except SystemExit:
+        raise
     except Exception as e:
         crit_err = traceback.format_exc()
         print("CRITICAL CRASH:\n", crit_err)
