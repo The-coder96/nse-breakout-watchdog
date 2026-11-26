@@ -3,10 +3,11 @@ LIVE INTRADAY BREAKOUT WATCHDOG (STOCKS & SECTORS)
 ==================================================================================
 Reads watchlist.json and checks live prices.
 If a Stock OR Sector crosses its multi-year ATH:
-1. Launches Playwright (only on trigger) and logs into TradingView.
-2. Captures a crisp native TradingView 1W chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
-3. Sends the alert + attached PNG chart + clean embed-free link to the routed Discord webhook.
-4. Clears triggered symbols from both watchlist.json and alert_history.json.
+1. Exits silently on weekends and Indian market holidays (XBOM calendar).
+2. Launches Playwright (only on trigger) and logs into TradingView.
+3. Captures a crisp native TradingView 1W chart snapshot (Ctrl+Alt+S -> Camera -> Clean DOM fallback).
+4. Sends the alert + attached PNG chart + clean embed-free link to the routed Discord webhook.
+5. Clears triggered symbols from both watchlist.json and alert_history.json.
 """
 
 import os
@@ -15,12 +16,30 @@ import json
 import warnings
 import traceback
 import requests
+from datetime import datetime, timedelta, timezone
 import yfinance as yf
 from tvDatafeed import TvDatafeed, Interval
 from playwright.sync_api import sync_playwright
 
+try:
+    import exchange_calendars as xcals
+except ImportError:
+    xcals = None
+
+try:
+    import holidays
+except ImportError:
+    holidays = None
+
 warnings.filterwarnings("ignore")
+IST = timezone(timedelta(hours=5, minutes=30), name="Asia/Kolkata")
 PROJECT_NAME = "NSE Breakout Watchdog"
+
+# ==============================================================================
+# HOLIDAY INTERCEPTOR SETTINGS (EASY TOGGLES)
+# ==============================================================================
+ENABLE_HOLIDAY_INTERCEPTOR = True  # True: exit silently on weekends & NSE/BSE holidays | False: bypass for manual testing
+EXTRA_NSE_HOLIDAYS = set()         # Optional ad-hoc closures in "YYYY-MM-DD" format, e.g. {"2026-01-15"}
 
 # ==============================================================================
 # SECURE DISCORD WEBHOOK & AUTH CONFIGURATION
@@ -54,6 +73,44 @@ def send_error_to_discord(error_msg, context="Watchdog"):
         print(f"[-] Failed to push bug report to Discord: {e}")
 
 # ==============================================================================
+# 📅 INDIAN STOCK MARKET HOLIDAY INTERCEPTOR
+# ==============================================================================
+def get_indian_market_status(date_str):
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+    if date_obj.weekday() >= 5:
+        return {"is_weekend": True, "is_open": False, "reason": "Weekend"}
+
+    if date_str in EXTRA_NSE_HOLIDAYS:
+        return {"is_weekend": False, "is_open": False, "reason": "a custom NSE holiday override"}
+
+    if xcals is None:
+        msg = "Missing dependency: 'exchange-calendars' is not installed. Skipping holiday check."
+        print(f"⚠️ {msg}")
+        send_error_to_discord(msg, context="Watchdog Holiday Interceptor")
+        return {"is_weekend": False, "is_open": True, "reason": None}
+
+    try:
+        in_cal = xcals.get_calendar("XBOM")
+        in_open = bool(in_cal.is_session(date_str))
+    except Exception:
+        send_error_to_discord(traceback.format_exc(), context="Watchdog Holiday Interceptor (XBOM)")
+        return {"is_weekend": False, "is_open": True, "reason": None}
+
+    in_reason = "an Indian market holiday"
+    if not in_open and holidays is not None:
+        try:
+            in_holidays = holidays.country_holidays("IN", subdiv="MH")
+            in_reason = in_holidays.get(date_obj) or "an Indian market holiday"
+        except Exception:
+            pass
+
+    return {
+        "is_weekend": False,
+        "is_open": in_open,
+        "reason": in_reason
+    }
+
+# ==============================================================================
 # ALERT HISTORY CLEANUP ON LIVE BREAKOUT
 # ==============================================================================
 def clear_from_alert_history(tv_symbols):
@@ -80,12 +137,6 @@ def clear_from_alert_history(tv_symbols):
     except Exception as e:
         print(f"[-] Failed to update {ALERT_HISTORY_FILE}: {e}")
         send_error_to_discord(traceback.format_exc(), context="Updating alert_history.json")
-
-try:
-    tv = TvDatafeed()
-except Exception as e:
-    print(f"[-] Failed to initialize TradingView feed in Watchdog: {e}")
-    tv = None
 
 # ==============================================================================
 # PLAYWRIGHT VISUAL ENGINE (MATCHES test.py)
@@ -276,7 +327,7 @@ def send_alert(item, live_price, image_path=None):
 # ==============================================================================
 # LIVE PRICE CHECKER
 # ==============================================================================
-def get_live_sector_price(tv_symbol):
+def get_live_sector_price(tv, tv_symbol):
     if not tv or ":" not in tv_symbol:
         return None
     try:
@@ -306,6 +357,13 @@ def main():
         print("Watchlist is empty. Exiting.")
         return
 
+    tv = None
+    if any(item.get("item_type") == "SECTOR" for item in watchlist):
+        try:
+            tv = TvDatafeed()
+        except Exception as e:
+            print(f"[-] Failed to initialize TradingView feed in Watchdog: {e}")
+
     triggered_items = []
     remaining_items = []
 
@@ -316,7 +374,7 @@ def main():
 
         try:
             if item.get("item_type") == "SECTOR":
-                live_price = get_live_sector_price(item.get("tv_symbol", ""))
+                live_price = get_live_sector_price(tv, item.get("tv_symbol", ""))
             else:
                 yf_symbol = item.get("yf_symbol") or f"{symbol}.NS"
                 tk = yf.Ticker(yf_symbol)
@@ -383,7 +441,21 @@ def main():
 
 if __name__ == "__main__":
     try:
+        if ENABLE_HOLIDAY_INTERCEPTOR:
+            today_str = datetime.now(tz=IST).strftime("%Y-%m-%d")
+            status = get_indian_market_status(today_str)
+
+            if status["is_weekend"]:
+                print(f"Today ({today_str}) is a weekend. Exiting silently.")
+                sys.exit(0)
+
+            if not status["is_open"]:
+                print(f"Indian Market Holiday Detected ({today_str}): {status['reason']}. Exiting silently.")
+                sys.exit(0)
+
         main()
+    except SystemExit:
+        raise
     except Exception:
         crit_err = traceback.format_exc()
         print("CRITICAL WATCHDOG CRASH:\n", crit_err)
