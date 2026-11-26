@@ -25,7 +25,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install yfinance requests pandas playwright
+          pip install yfinance requests pandas playwright exchange-calendars holidays
           pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
 
       - name: Install Playwright Chromium Browser
