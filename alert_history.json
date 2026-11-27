@@ -3,8 +3,8 @@
         "symbol": "CNX500",
         "item_type": "SECTOR",
         "first_alert_date": "2026-11-19",
-        "last_seen_date": "2026-11-26",
-        "days_in_zone": 6,
+        "last_seen_date": "2026-11-27",
+        "days_in_zone": 7,
         "active": true,
         "reentered_today": false,
         "ath_target": 24573.4
@@ -15,7 +15,7 @@
         "first_alert_date": "2026-11-23",
         "last_seen_date": "2026-11-26",
         "days_in_zone": 4,
-        "active": true,
+        "active": false,
         "reentered_today": false,
         "ath_target": 2122.75
     },
@@ -28,5 +28,15 @@
         "active": false,
         "reentered_today": false,
         "ath_target": 13057.6
+    },
+    "NSE:ANGELONE": {
+        "symbol": "ANGELONE",
+        "item_type": "STOCK",
+        "first_alert_date": "2026-11-27",
+        "last_seen_date": "2026-11-27",
+        "days_in_zone": 1,
+        "active": true,
+        "reentered_today": false,
+        "ath_target": 389.6
     }
 }

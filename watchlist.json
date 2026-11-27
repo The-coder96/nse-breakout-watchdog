@@ -1,12 +1,12 @@
 [
     {
-        "symbol": "LALPATHLAB",
-        "tv_symbol": "NSE:LALPATHLAB",
-        "yf_symbol": "LALPATHLAB.NS",
-        "target": 2122.75,
-        "current_price": 2037.9,
-        "distance_pct": 4.0,
-        "lh_date": "15-Sep-2021",
+        "symbol": "ANGELONE",
+        "tv_symbol": "NSE:ANGELONE",
+        "yf_symbol": "ANGELONE.NS",
+        "target": 389.6,
+        "current_price": 376.0,
+        "distance_pct": 3.49,
+        "lh_date": "09-Jan-2024",
         "item_type": "STOCK"
     },
     {
@@ -14,8 +14,8 @@
         "tv_symbol": "NSE:CNX500",
         "yf_symbol": null,
         "target": 24573.4,
-        "current_price": 24086.5,
-        "distance_pct": 1.98,
+        "current_price": 23949.35,
+        "distance_pct": 2.54,
         "lh_date": "27-Sep-2024",
         "item_type": "SECTOR"
     }
